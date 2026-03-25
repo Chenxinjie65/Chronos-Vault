@@ -141,3 +141,18 @@ A successful implementation should include:
 - invariant-minded reasoning
 - minimal and reviewable code
 - no unnecessary abstraction
+## Development
+
+This repo uses **Foundry**.
+
+```bash
+forge fmt
+forge build
+forge test
+```
+
+If dependencies are not installed yet:
+
+```bash
+forge install OpenZeppelin/openzeppelin-contracts foundry-rs/forge-std
+```
