@@ -69,6 +69,9 @@ Unless explicitly changed, assume:
 - multiple positions per user
 - auto-claim on normal withdraw
 - emergency withdraw returns principal only
+- forfeited rewards from emergency withdraw are redistributed to remaining stakers, or routed to treasury if none remain
+- rewards, penalties, or forfeited rewards arising during zero-staker periods are routed to treasury
+- matured withdrawals remain allowed while paused
 
 ## 6. Security requirements
 
@@ -80,6 +83,7 @@ Always consider:
 - ownership checks on positions
 - zero-staker reward funding edge case
 - zero-staker penalty redistribution edge case
+- zero-staker forfeited reward edge case
 - paused and emergency states
 
 Use:
@@ -92,6 +96,8 @@ Do not:
 - transfer tokens before updating critical state where that could be unsafe
 - allow withdrawn positions to claim again
 - let an early exiter share in their own redistributed penalty
+- accumulate user-distributable rewards across a zero-staker interval
+- leave forfeited emergency-withdraw rewards stranded in the contract
 
 ## 7. Accounting rules
 
@@ -107,20 +113,40 @@ Keep principal accounting separate from weighted reward accounting.
 For early withdraw:
 1. compute pending reward
 2. remove the exiting position from total weighted stake
-3. compute and redistribute penalty to remaining stake
+3. compute and redistribute penalty to remaining stake, or route to treasury if no active stake remains
 4. mark withdrawn
 5. transfer payout
 
 The exiter must not benefit from the penalty they pay.
 
 ### 7.4 No active stakers case
-If rewards or penalties need to be distributed while `totalWeightedStaked == 0`, move them into `pendingUndistributedRewards`.
+If rewards, penalties, or forfeited rewards arise while `totalWeightedStaked == 0`, they MUST be routed to `treasury` and MUST NOT be stored for later user distribution.
+
+This rule exists to prevent zero-staker capture / first-staker windfall attacks.
 
 ### 7.5 Withdrawn positions are terminal
 Once withdrawn:
 - no claim
 - no withdraw
 - no reward accrual
+
+### 7.6 Emergency withdraw reward handling
+For emergency withdraw:
+- return principal only
+- do not pay pending rewards to the exiting user
+- calculate forfeited pending rewards explicitly
+- if active weighted stake remains, redistribute forfeited rewards through the reward accumulator
+- if no active weighted stake remains, route forfeited rewards to treasury
+
+Do not leave forfeited rewards stranded in contract balance.
+
+### 7.7 Pause semantics
+When paused:
+- `stake` must be disabled
+- `claim` must be disabled
+- early `withdraw` must be disabled
+- matured `withdraw` must remain available
+- `emergencyWithdraw` is only available if emergency mode is enabled
 
 ## 8. Testing standards
 
@@ -137,8 +163,10 @@ Important cases:
 - multiple users with different weights
 - early withdraw penalty redistribution
 - final remaining staker case
-- pending undistributed rewards
-- emergency withdraw semantics
+- zero-staker rewards funded cannot be captured by a future first staker
+- penalties arising with zero remaining stakers are routed to treasury
+- emergency withdraw forfeited rewards are not left as locked dust
+- matured withdraw while paused
 - paused behavior
 
 ## 9. Coding process rules
@@ -172,6 +200,7 @@ Add comments only where they provide real value.
 Must comment:
 - reward accumulator logic
 - penalty redistribution ordering
+- zero-staker treasury routing rules
 - emergency mode semantics if non-obvious
 
 Do not over-comment trivial getters or obvious assignment code.
@@ -184,6 +213,7 @@ Use this decision rule:
 - if ambiguity affects security or accounting, choose the most conservative implementation and explain it
 - if ambiguity affects UX but not safety, follow SPEC.md preferred behavior
 - if a requested change conflicts with SPEC.md, call out the conflict
+- if AGENTS.md and SPEC.md ever conflict on accounting or safety behavior, follow SPEC.md and explicitly mention the conflict
 
 ## 13. Recommended file targets
 
@@ -207,6 +237,7 @@ The MVP is done when:
 - mature withdraw works
 - early withdraw penalty works
 - penalties are redistributed correctly
+- zero-staker value routing works correctly
 - admin-funded rewards work
 - pause and emergency mode work
 - tests cover core and edge flows
