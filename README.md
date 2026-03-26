@@ -4,6 +4,11 @@ Chronos Vault is a single-asset staking vault for EVM chains. Users stake one ER
 
 The same token is used for both principal and rewards. Admin-funded rewards, early-exit penalties, and forfeited rewards all flow through the same accounting model.
 
+Supporting docs:
+
+- deployment and verification: [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
+- audit assumptions and owner powers: [`docs/AUDIT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT.md)
+
 ## Core behavior
 
 ### Lock tiers
