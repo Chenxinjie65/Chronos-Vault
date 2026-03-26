@@ -21,6 +21,8 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     error InvalidLockTierConfig();
     error InvalidTier(uint256 tierId);
     error InvalidWeightedAmount();
+    error NotPositionOwner();
+    error PositionWithdrawn();
 
     struct Position {
         address owner;
@@ -61,6 +63,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         uint256 weightedAmount
     );
     event RewardsFunded(address indexed funder, uint256 amount);
+    event Claimed(address indexed user, uint256 indexed positionId, uint256 reward);
 
     constructor(address stakingToken_, address treasury_) Ownable(msg.sender) {
         if (stakingToken_ == address(0) || treasury_ == address(0)) {
@@ -136,6 +139,34 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         emit RewardsFunded(msg.sender, amount);
     }
 
+    function pendingRewards(uint256 positionId) public view returns (uint256) {
+        Position memory position = positions[positionId];
+        if (position.owner == address(0) || position.withdrawn) {
+            return 0;
+        }
+
+        return _pendingRewards(position);
+    }
+
+    function claim(uint256 positionId) external nonReentrant returns (uint256 reward) {
+        Position storage position = positions[positionId];
+        if (position.owner != msg.sender) {
+            revert NotPositionOwner();
+        }
+        if (position.withdrawn) {
+            revert PositionWithdrawn();
+        }
+
+        reward = _pendingRewards(position);
+        position.rewardDebt = _calculateRewardDebt(position.weightedAmount);
+
+        if (reward > 0) {
+            stakingToken.safeTransfer(msg.sender, reward);
+        }
+
+        emit Claimed(msg.sender, positionId, reward);
+    }
+
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
         if (duration == 0 || weight == 0) {
             revert InvalidLockTierConfig();
@@ -158,5 +189,9 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     function _distributeRewards(uint256 amount) internal {
         // Rewards are distributed by weighted stake only, never by raw principal or vault balance.
         accRewardPerWeightedShare += amount * ACC_PRECISION / totalWeightedStaked;
+    }
+
+    function _pendingRewards(Position memory position) internal view returns (uint256) {
+        return _calculateRewardDebt(position.weightedAmount) - position.rewardDebt;
     }
 }

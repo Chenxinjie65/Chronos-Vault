@@ -7,6 +7,22 @@ import {MockERC20} from "../contracts/MockERC20.sol";
 contract ChronosVaultTest {
     address internal constant TREASURY = address(0xBEEF);
 
+    function testPendingRewardsMatchesWeightedDistribution() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 firstAmount = 100 ether;
+        uint256 secondAmount = 100 ether;
+        uint256 rewardAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), firstAmount + secondAmount + rewardAmount), "approve should succeed");
+
+        uint256 firstPositionId = vault.stake(firstAmount, vault.TIER_90_DAYS());
+        uint256 secondPositionId = vault.stake(secondAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        _assertEq(vault.pendingRewards(firstPositionId), 60 ether, "unexpected first pending reward");
+        _assertEq(vault.pendingRewards(secondPositionId), 40 ether, "unexpected second pending reward");
+    }
+
     function testFundRewardsWithActiveStakersUpdatesAccumulator() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 stakeAmount = 100 ether;
@@ -39,6 +55,68 @@ contract ChronosVaultTest {
 
         (,,, uint256 rewardDebt,,,) = vault.positions(0);
         _assertEq(rewardDebt, 0, "future staker should not inherit routed rewards");
+    }
+
+    function testClaimTransfersPendingRewards() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 90 ether;
+        uint256 expectedReward = 90 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        uint256 balanceBeforeClaim = token.balanceOf(address(this));
+        uint256 claimedReward = vault.claim(positionId);
+        uint256 balanceAfterClaim = token.balanceOf(address(this));
+        (,,, uint256 rewardDebt,,,) = vault.positions(positionId);
+
+        _assertEq(claimedReward, expectedReward, "unexpected claimed reward");
+        _assertEq(balanceAfterClaim - balanceBeforeClaim, expectedReward, "unexpected claim transfer");
+        _assertEq(vault.pendingRewards(positionId), 0, "pending rewards should be cleared after claim");
+        _assertEq(rewardDebt, expectedReward, "unexpected reward debt after claim");
+    }
+
+    function testClaimDoesNotAllowDoubleClaimWindfall() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 90 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        uint256 balanceBeforeFirstClaim = token.balanceOf(address(this));
+        uint256 firstClaimedReward = vault.claim(positionId);
+        uint256 balanceAfterFirstClaim = token.balanceOf(address(this));
+        uint256 secondClaimedReward = vault.claim(positionId);
+        uint256 balanceAfterSecondClaim = token.balanceOf(address(this));
+
+        _assertEq(firstClaimedReward, rewardAmount, "unexpected first claim reward");
+        _assertEq(balanceAfterFirstClaim - balanceBeforeFirstClaim, rewardAmount, "unexpected first claim transfer");
+        _assertEq(secondClaimedReward, 0, "second claim should not pay new rewards");
+        _assertEq(balanceAfterSecondClaim, balanceAfterFirstClaim, "second claim should not change balance");
+    }
+
+    function testClaimRevertsForUnauthorizedCaller() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        UnauthorizedClaimer claimer = new UnauthorizedClaimer();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 90 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        (bool ok, bytes memory returndata) =
+            address(claimer).call(abi.encodeCall(UnauthorizedClaimer.claim, (vault, positionId)));
+
+        _assertTrue(!ok, "claim should revert for unauthorized caller");
+        _assertRevertSelector(returndata, ChronosVault.NotPositionOwner.selector);
     }
 
     function testStakeCreatesPositionWithExpectedAccounting() public {
@@ -178,5 +256,11 @@ contract ChronosVaultTest {
             actualSelector := mload(add(returndata, 0x20))
         }
         require(actualSelector == expectedSelector, "unexpected revert selector");
+    }
+}
+
+contract UnauthorizedClaimer {
+    function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
+        return vault.claim(positionId);
     }
 }
