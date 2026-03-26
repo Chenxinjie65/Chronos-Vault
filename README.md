@@ -141,3 +141,43 @@ A successful implementation should include:
 - invariant-minded reasoning
 - minimal and reviewable code
 - no unnecessary abstraction
+
+## Local development
+
+This repository uses Foundry with `contracts/` as the main source directory.
+
+### Prerequisites
+
+- Foundry (`forge`, `cast`, `anvil`)
+
+### Install dependencies
+
+Clone with submodules:
+
+```bash
+git clone --recurse-submodules <repo-url>
+```
+
+If already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+### Build
+
+```bash
+forge build
+```
+
+### Test
+
+```bash
+forge test
+```
+
+### Format
+
+```bash
+forge fmt
+```
