@@ -103,6 +103,13 @@ interface IChronosVault {
     /// @notice Returns a configured lock tier by id.
     function lockTiers(uint256 tierId) external view returns (uint64 duration, uint256 weight, bool enabled);
 
+    /// @notice Returns a configured lock tier through a struct-friendly helper.
+    function getLockTier(uint256 tierId) external view returns (LockTier memory);
+
+    /// @notice Returns all lock tier ids exposed by this MVP.
+    /// @dev For this implementation the result is the fixed tier set `[0, 1, 2]`.
+    function getAllLockTierIds() external pure returns (uint256[] memory);
+
     /// @notice Stakes `amount` into a new position under the chosen lock tier.
     /// @dev Reverts while paused or if the tier is invalid. Rewards start from the current accumulator snapshot.
     /// @param amount Principal amount to stake.
@@ -123,6 +130,9 @@ interface IChronosVault {
 
     /// @notice Returns all position ids owned by `user` in insertion order.
     function getUserPositionIds(address user) external view returns (uint256[] memory);
+
+    /// @notice Returns only active, non-withdrawn position ids owned by `user`.
+    function getUserActivePositionIds(address user) external view returns (uint256[] memory);
 
     /// @notice Returns the stored position record for `positionId`.
     /// @dev Withdrawn positions remain queryable for historical inspection.

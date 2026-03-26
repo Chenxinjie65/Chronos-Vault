@@ -296,6 +296,54 @@ contract ChronosVaultTest {
         _assertTrue(!position.withdrawn, "helper position should be active");
     }
 
+    function testGetLockTierAndGetAllLockTierIdsExposeTierConfiguration() public {
+        (, ChronosVault vault) = _deployVault();
+        uint256[] memory tierIds = vault.getAllLockTierIds();
+        ChronosVault.LockTier memory tier = vault.getLockTier(vault.TIER_90_DAYS());
+
+        _assertEq(tierIds.length, 3, "unexpected tier id count");
+        _assertEq(tierIds[0], vault.TIER_30_DAYS(), "unexpected first tier id");
+        _assertEq(tierIds[1], vault.TIER_90_DAYS(), "unexpected second tier id");
+        _assertEq(tierIds[2], vault.TIER_180_DAYS(), "unexpected third tier id");
+        _assertEq(uint256(tier.duration), 90 days, "unexpected tier duration");
+        _assertEq(tier.weight, 1_500_000_000_000_000_000, "unexpected tier weight");
+        _assertTrue(tier.enabled, "tier should be enabled by default");
+    }
+
+    function testGetLockTierReflectsDisabledTierConfiguration() public {
+        (, ChronosVault vault) = _deployVault();
+
+        vault.setLockTier(vault.TIER_30_DAYS(), 30 days, 1e18, false);
+        ChronosVault.LockTier memory tier = vault.getLockTier(vault.TIER_30_DAYS());
+
+        _assertEq(uint256(tier.duration), 30 days, "unexpected disabled tier duration");
+        _assertEq(tier.weight, 1e18, "unexpected disabled tier weight");
+        _assertTrue(!tier.enabled, "disabled tier should remain visible through helper");
+    }
+
+    function testGetUserActivePositionIdsFiltersWithdrawnPositions() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256[] memory activeIds;
+        uint256 firstAmount = 25 ether;
+        uint256 secondAmount = 40 ether;
+
+        _assertTrue(token.approve(address(vault), firstAmount + secondAmount), "approve should succeed");
+
+        uint256 firstPositionId = vault.stake(firstAmount, vault.TIER_30_DAYS());
+        uint256 secondPositionId = vault.stake(secondAmount, vault.TIER_90_DAYS());
+
+        activeIds = vault.getUserActivePositionIds(address(this));
+        _assertEq(activeIds.length, 2, "expected both positions to start active");
+
+        vm.warp(block.timestamp + 30 days);
+        vault.withdraw(firstPositionId);
+
+        activeIds = vault.getUserActivePositionIds(address(this));
+
+        _assertEq(activeIds.length, 1, "expected one remaining active position");
+        _assertEq(activeIds[0], secondPositionId, "unexpected remaining active position id");
+    }
+
     function testPreviewWithdrawReturnsEarlyWithdrawBreakdown() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 stakeAmount = 100 ether;

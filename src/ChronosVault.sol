@@ -158,8 +158,47 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
         return _pendingRewards(position);
     }
 
+    function getLockTier(uint256 tierId) external view override returns (LockTier memory) {
+        return lockTiers[tierId];
+    }
+
+    function getAllLockTierIds() external pure override returns (uint256[] memory tierIds) {
+        tierIds = new uint256[](3);
+        tierIds[0] = TIER_30_DAYS;
+        tierIds[1] = TIER_90_DAYS;
+        tierIds[2] = TIER_180_DAYS;
+    }
+
     function getUserPositionIds(address user) external view override returns (uint256[] memory) {
         return userPositionIds[user];
+    }
+
+    function getUserActivePositionIds(address user)
+        external
+        view
+        override
+        returns (uint256[] memory activePositionIds)
+    {
+        uint256[] storage allPositionIds = userPositionIds[user];
+        uint256 positionsLength = allPositionIds.length;
+        uint256 activeCount;
+
+        for (uint256 i; i < positionsLength; ++i) {
+            if (!positions[allPositionIds[i]].withdrawn) {
+                ++activeCount;
+            }
+        }
+
+        activePositionIds = new uint256[](activeCount);
+        uint256 activeIndex;
+
+        for (uint256 i; i < positionsLength; ++i) {
+            uint256 positionId = allPositionIds[i];
+            if (!positions[positionId].withdrawn) {
+                activePositionIds[activeIndex] = positionId;
+                ++activeIndex;
+            }
+        }
     }
 
     function getPosition(uint256 positionId) external view override returns (Position memory) {
