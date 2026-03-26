@@ -183,7 +183,8 @@ interface IChronosVault {
     /// @notice Updates the treasury used for zero-staker routing.
     function setTreasury(address newTreasury) external;
 
-    /// @notice Creates or updates a lock tier.
+    /// @notice Updates one of the fixed lock tiers exposed by this MVP.
+    /// @dev Valid tier ids are the fixed set returned by `getAllLockTierIds()`.
     function setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) external;
 
     /// @notice Pauses stake, claim, and early withdraw.

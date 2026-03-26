@@ -205,8 +205,9 @@ contract ChronosVaultTest {
     function testSetLockTierRevertsForZeroDuration() public {
         (, ChronosVault vault) = _deployVault();
 
-        (bool ok, bytes memory returndata) =
-            address(vault).call(abi.encodeCall(ChronosVault.setLockTier, (uint256(7), uint64(0), 1e18, true)));
+        (bool ok, bytes memory returndata) = address(vault).call(
+            abi.encodeCall(ChronosVault.setLockTier, (vault.TIER_30_DAYS(), uint64(0), uint256(1e18), true))
+        );
 
         _assertTrue(!ok, "zero-duration tier should revert");
         _assertRevertSelector(returndata, ChronosVault.InvalidLockTierConfig.selector);
@@ -216,11 +217,22 @@ contract ChronosVaultTest {
         (, ChronosVault vault) = _deployVault();
 
         (bool ok, bytes memory returndata) = address(vault).call(
-            abi.encodeCall(ChronosVault.setLockTier, (uint256(7), uint64(30 days), uint256(0), true))
+            abi.encodeCall(ChronosVault.setLockTier, (vault.TIER_30_DAYS(), uint64(30 days), uint256(0), true))
         );
 
         _assertTrue(!ok, "zero-weight tier should revert");
         _assertRevertSelector(returndata, ChronosVault.InvalidLockTierConfig.selector);
+    }
+
+    function testSetLockTierRevertsForUnsupportedTierId() public {
+        (, ChronosVault vault) = _deployVault();
+
+        (bool ok, bytes memory returndata) = address(vault).call(
+            abi.encodeCall(ChronosVault.setLockTier, (uint256(7), uint64(30 days), uint256(1e18), true))
+        );
+
+        _assertTrue(!ok, "unsupported tier id should revert");
+        _assertRevertSelector(returndata, ChronosVault.InvalidTier.selector);
     }
 
     function testSetLockTierRevertsForUnauthorizedCaller() public {

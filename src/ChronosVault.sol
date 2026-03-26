@@ -355,6 +355,9 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
     }
 
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
+        if (tierId > TIER_180_DAYS) {
+            revert InvalidTier(tierId);
+        }
         if (duration == 0 || weight == 0) {
             revert InvalidLockTierConfig();
         }
