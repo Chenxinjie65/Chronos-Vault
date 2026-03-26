@@ -1,4 +1,4 @@
-# Audit Notes
+# Audit Preparation Notes
 
 This document is the audit-facing summary for Chronos Vault. It is intended to make review scope, trust assumptions, and critical behaviors explicit before a security review.
 
@@ -6,15 +6,15 @@ This document is the audit-facing summary for Chronos Vault. It is intended to m
 
 Primary review target:
 
-- [`src/ChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol)
+- [`src/ChronosVault.sol`](../src/ChronosVault.sol)
 
 Supporting interface:
 
-- [`src/interfaces/IChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/interfaces/IChronosVault.sol)
+- [`src/interfaces/IChronosVault.sol`](../src/interfaces/IChronosVault.sol)
 
 Auxiliary local-only contract:
 
-- [`src/MockERC20.sol`](/home/cheng/Portfolio/Chronos-Vault/src/MockERC20.sol)
+- [`src/MockERC20.sol`](../src/MockERC20.sol)
 
 Notes:
 
@@ -80,9 +80,9 @@ The intended protocol properties are:
 
 The repository now includes:
 
-- unit and scenario tests in [`test/ChronosVault.t.sol`](/home/cheng/Portfolio/Chronos-Vault/test/ChronosVault.t.sol)
-- fuzz tests in [`test/ChronosVaultFuzz.t.sol`](/home/cheng/Portfolio/Chronos-Vault/test/ChronosVaultFuzz.t.sol)
-- invariant tests in [`test/ChronosVaultInvariants.t.sol`](/home/cheng/Portfolio/Chronos-Vault/test/ChronosVaultInvariants.t.sol)
+- unit and scenario tests in [`test/ChronosVault.t.sol`](../test/ChronosVault.t.sol)
+- fuzz tests in [`test/ChronosVaultFuzz.t.sol`](../test/ChronosVaultFuzz.t.sol)
+- invariant tests in [`test/ChronosVaultInvariants.t.sol`](../test/ChronosVaultInvariants.t.sol)
 
 Property-style coverage focuses on:
 

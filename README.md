@@ -7,7 +7,7 @@ The same token is used for both principal and rewards. Admin-funded rewards, ear
 Supporting docs:
 
 - deployment and verification: [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
-- audit assumptions and owner powers: [`docs/AUDIT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT.md)
+- audit assumptions and owner powers: [`docs/AUDIT_PREP.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT_PREP.md)
 
 ## Core behavior
 
