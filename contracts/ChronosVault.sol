@@ -11,6 +11,8 @@ contract ChronosVault is Ownable, ReentrancyGuard {
 
     uint256 public constant ACC_PRECISION = 1e24;
     uint256 public constant WEIGHT_SCALE = 1e18;
+    uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant DEFAULT_EARLY_EXIT_PENALTY_BPS = 1_000;
 
     uint256 public constant TIER_30_DAYS = 0;
     uint256 public constant TIER_90_DAYS = 1;
@@ -49,6 +51,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     uint256 public totalPrincipalStaked;
     uint256 public totalWeightedStaked;
     uint256 public accRewardPerWeightedShare;
+    uint256 public earlyExitPenaltyBps = DEFAULT_EARLY_EXIT_PENALTY_BPS;
 
     mapping(uint256 => Position) public positions;
     mapping(address => uint256[]) public userPositionIds;
@@ -182,21 +185,39 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         if (position.withdrawn) {
             revert PositionWithdrawn();
         }
-        if (block.timestamp < position.unlockTime) {
-            revert PositionNotMatured();
-        }
 
         uint256 principalOut = position.principal;
         uint256 rewardOut = _pendingRewards(position);
+        uint256 settledRewardDebt = position.rewardDebt + rewardOut;
+        uint256 penalty = 0;
 
         totalPrincipalStaked -= principalOut;
         totalWeightedStaked -= position.weightedAmount;
-        position.rewardDebt = _calculateRewardDebt(position.weightedAmount);
+
+        if (block.timestamp < position.unlockTime) {
+            penalty = principalOut * earlyExitPenaltyBps / BPS_DENOMINATOR;
+            principalOut -= penalty;
+
+            // Penalty redistribution happens only after the exiting position has been removed from active weight.
+            if (penalty > 0) {
+                if (totalWeightedStaked == 0) {
+                    // Zero-staker penalty value must route to treasury and never remain user-distributable.
+                    if (treasury == address(0)) {
+                        revert ZeroAddress();
+                    }
+                    stakingToken.safeTransfer(treasury, penalty);
+                } else {
+                    _distributeRewards(penalty);
+                }
+            }
+        }
+
+        position.rewardDebt = settledRewardDebt;
         position.withdrawn = true;
 
         stakingToken.safeTransfer(msg.sender, principalOut + rewardOut);
 
-        emit Withdrawn(msg.sender, positionId, principalOut, rewardOut, 0);
+        emit Withdrawn(msg.sender, positionId, principalOut, rewardOut, penalty);
     }
 
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {

@@ -179,17 +179,23 @@ contract ChronosVaultTest {
         _assertTrue(withdrawn, "position should be withdrawn");
     }
 
-    function testWithdrawRevertsBeforeUnlock() public {
+    function testEarlyWithdrawDeductsPenalty() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
         uint256 stakeAmount = 100 ether;
+        uint256 expectedPenalty = 10 ether;
 
-        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+        token.mint(address(exiter), stakeAmount);
+        exiter.approveToken(token, address(vault), stakeAmount);
 
-        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
-        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.withdraw, (positionId)));
+        uint256 positionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+        exiter.withdraw(vault, positionId);
 
-        _assertTrue(!ok, "withdraw should revert before unlock");
-        _assertRevertSelector(returndata, ChronosVault.PositionNotMatured.selector);
+        _assertEq(token.balanceOf(address(exiter)), stakeAmount - expectedPenalty, "unexpected early withdraw payout");
+        _assertEq(token.balanceOf(TREASURY), expectedPenalty, "penalty should route to treasury for last staker");
+        _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
+        _assertEq(vault.pendingRewards(positionId), 0, "withdrawn position should have no pending rewards");
     }
 
     function testWithdrawRevertsOnSecondCall() public {
@@ -206,6 +212,76 @@ contract ChronosVaultTest {
 
         _assertTrue(!ok, "second withdraw should revert");
         _assertRevertSelector(returndata, ChronosVault.PositionWithdrawn.selector);
+    }
+
+    function testEarlyWithdrawRedistributesPenaltyToRemainingStaker() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+        uint256 expectedPenalty = 10 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 remainingPositionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        uint256 exitingPositionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+
+        exiter.withdraw(vault, exitingPositionId);
+
+        _assertEq(vault.pendingRewards(remainingPositionId), expectedPenalty, "remaining staker should receive penalty");
+        _assertEq(token.balanceOf(TREASURY), 0, "treasury should not receive redistributed penalty");
+        _assertEq(
+            token.balanceOf(address(exiter)),
+            stakeAmount - expectedPenalty,
+            "exiter should only receive principal minus penalty"
+        );
+    }
+
+    function testEarlyWithdrawExiterDoesNotReceiveOwnPenaltyBack() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 remainingPositionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        uint256 exitingPositionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+
+        vault.fundRewards(rewardAmount);
+        exiter.withdraw(vault, exitingPositionId);
+
+        _assertEq(
+            token.balanceOf(address(exiter)),
+            stakeAmount,
+            "exiter should receive principal minus penalty plus pre-existing rewards only"
+        );
+
+        uint256 claimedReward = vault.claim(remainingPositionId);
+        _assertEq(claimedReward, 20 ether, "remaining staker should receive funded rewards plus redistributed penalty");
+    }
+
+    function testEarlyWithdrawRoutesLastStakerPenaltyToTreasury() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+        uint256 expectedPenalty = 10 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 positionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+        exiter.withdraw(vault, positionId);
+
+        _assertEq(token.balanceOf(TREASURY), expectedPenalty, "treasury should receive last-staker penalty");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be zero after last staker exits");
+
+        _assertTrue(token.approve(address(vault), 10 ether), "approve should succeed");
+        uint256 newPositionId = vault.stake(10 ether, vault.TIER_30_DAYS());
+        _assertEq(vault.pendingRewards(newPositionId), 0, "future staker should not capture routed penalty");
     }
 
     function testStakeCreatesPositionWithExpectedAccounting() public {
@@ -356,6 +432,20 @@ contract ChronosVaultTest {
 contract UnauthorizedClaimer {
     function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
         return vault.claim(positionId);
+    }
+}
+
+contract VaultUser {
+    function approveToken(MockERC20 token, address spender, uint256 amount) external {
+        token.approve(spender, amount);
+    }
+
+    function stake(ChronosVault vault, uint256 amount, uint256 tierId) external returns (uint256) {
+        return vault.stake(amount, tierId);
+    }
+
+    function withdraw(ChronosVault vault, uint256 positionId) external {
+        vault.withdraw(positionId);
     }
 }
 
