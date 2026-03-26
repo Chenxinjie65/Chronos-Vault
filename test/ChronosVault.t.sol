@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ChronosVault} from "../contracts/ChronosVault.sol";
-import {MockERC20} from "../contracts/MockERC20.sol";
+import {ChronosVault} from "../src/ChronosVault.sol";
+import {MockERC20} from "../src/MockERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface Vm {

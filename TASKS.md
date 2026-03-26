@@ -13,9 +13,9 @@ Set up a minimal Foundry project structure for Chronos Vault.
 - initialize Foundry project layout if not present
 - add OpenZeppelin dependency if needed
 - create base directories:
-  - `contracts/`
-  - `contracts/interfaces/`
-  - `contracts/libraries/`
+  - `src/`
+  - `src/interfaces/`
+  - `src/libraries/`
   - `test/`
   - `script/`
 - add `foundry.toml` if needed

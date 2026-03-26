@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {MockERC20} from "../contracts/MockERC20.sol";
+import {MockERC20} from "../src/MockERC20.sol";
 
 contract MockERC20Test {
     address internal constant INITIAL_HOLDER = address(0xA11CE);

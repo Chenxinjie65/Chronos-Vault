@@ -218,43 +218,39 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
             revert EmergencyModeActive();
         }
 
-        bool isMatured = block.timestamp >= position.unlockTime;
-        if (!isMatured) {
-            _requireNotPaused();
+        bool matured = block.timestamp >= position.unlockTime;
+        if (!matured) {
+            _requireEarlyWithdrawAllowed();
         }
 
-        uint256 principalOut = position.principal;
-        uint256 rewardOut = _pendingRewards(position);
-        uint256 settledRewardDebt = position.rewardDebt + rewardOut;
-        uint256 penalty = 0;
+        uint256 principal = position.principal;
+        uint256 weightedAmount = position.weightedAmount;
+        uint256 reward = _pendingRewards(position);
+        uint256 accruedRewardDebt = _calculateRewardDebt(weightedAmount);
 
-        totalPrincipalStaked -= principalOut;
-        totalWeightedStaked -= position.weightedAmount;
+        totalPrincipalStaked -= principal;
+        totalWeightedStaked -= weightedAmount;
 
-        if (!isMatured) {
-            penalty = principalOut * earlyExitPenaltyBps / BPS_DENOMINATOR;
-            principalOut -= penalty;
+        uint256 penalty;
+        uint256 payoutPrincipal = principal;
 
-            // Penalty redistribution happens only after the exiting position has been removed from active weight.
+        if (!matured) {
+            penalty = principal * earlyExitPenaltyBps / BPS_DENOMINATOR;
+            payoutPrincipal = principal - penalty;
+
             if (penalty > 0) {
-                if (totalWeightedStaked == 0) {
-                    // Zero-staker penalty value must route to treasury and never remain user-distributable.
-                    if (treasury == address(0)) {
-                        revert ZeroAddress();
-                    }
-                    stakingToken.safeTransfer(treasury, penalty);
-                } else {
-                    _distributeRewards(penalty);
-                }
+                _routeOrDistributeValue(penalty);
             }
         }
 
-        position.rewardDebt = settledRewardDebt;
+        // Preserve the original position fields for historical inspection while
+        // the withdrawn flag makes the position terminal for future actions.
         position.withdrawn = true;
+        position.rewardDebt = accruedRewardDebt;
 
-        stakingToken.safeTransfer(msg.sender, principalOut + rewardOut);
+        stakingToken.safeTransfer(msg.sender, payoutPrincipal + reward);
 
-        emit Withdrawn(msg.sender, positionId, principalOut, rewardOut, penalty);
+        emit Withdrawn(msg.sender, positionId, payoutPrincipal, reward, penalty);
     }
 
     function emergencyWithdraw(uint256 positionId) external nonReentrant {
@@ -270,31 +266,40 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
             revert PositionWithdrawn();
         }
 
-        uint256 principalOut = position.principal;
+        uint256 principal = position.principal;
+        uint256 weightedAmount = position.weightedAmount;
         uint256 forfeitedReward = _pendingRewards(position);
+        uint256 accruedRewardDebt = _calculateRewardDebt(weightedAmount);
 
-        totalPrincipalStaked -= principalOut;
-        totalWeightedStaked -= position.weightedAmount;
+        totalPrincipalStaked -= principal;
+        totalWeightedStaked -= weightedAmount;
 
-        // Emergency exits return principal only. Any accrued reward must be
-        // explicitly redistributed to active stakers or routed to treasury so no dust is stranded.
+        position.withdrawn = true;
+        position.rewardDebt = accruedRewardDebt;
+
         if (forfeitedReward > 0) {
-            if (totalWeightedStaked == 0) {
-                if (treasury == address(0)) {
-                    revert ZeroAddress();
-                }
-                stakingToken.safeTransfer(treasury, forfeitedReward);
-            } else {
-                _distributeRewards(forfeitedReward);
-            }
+            _routeOrDistributeValue(forfeitedReward);
         }
 
-        position.rewardDebt += forfeitedReward;
-        position.withdrawn = true;
+        stakingToken.safeTransfer(msg.sender, principal);
 
-        stakingToken.safeTransfer(msg.sender, principalOut);
+        emit EmergencyWithdrawn(msg.sender, positionId, principal, forfeitedReward);
+    }
 
-        emit EmergencyWithdrawn(msg.sender, positionId, principalOut, forfeitedReward);
+    function setEarlyExitPenaltyBps(uint256 newPenaltyBps) external onlyOwner {
+        if (newPenaltyBps > BPS_DENOMINATOR) {
+            revert InvalidAmount();
+        }
+
+        earlyExitPenaltyBps = newPenaltyBps;
+    }
+
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) {
+            revert ZeroAddress();
+        }
+
+        treasury = newTreasury;
     }
 
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
@@ -307,28 +312,53 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit LockTierUpdated(tierId, duration, weight, enabled);
     }
 
+    function _requireClaimAllowed() internal view {
+        if (emergencyMode) {
+            revert EmergencyModeActive();
+        }
+        if (paused()) {
+            revert Pausable.EnforcedPause();
+        }
+    }
+
+    function _requireEarlyWithdrawAllowed() internal view {
+        if (paused()) {
+            revert Pausable.EnforcedPause();
+        }
+    }
+
+    function _pendingRewards(Position memory position) internal view returns (uint256) {
+        uint256 accumulatedReward = position.weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
+        return accumulatedReward - position.rewardDebt;
+    }
+
+    function _calculateRewardDebt(uint256 weightedAmount) internal view returns (uint256) {
+        return weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
+    }
+
     function _calculateWeightedAmount(uint256 amount, uint256 weight) internal pure returns (uint256) {
         return amount * weight / WEIGHT_SCALE;
     }
 
-    function _calculateRewardDebt(uint256 weightedAmount) internal view returns (uint256) {
-        // Snapshot the current accumulator so later rewards only include value added after staking.
-        return weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
-    }
+    // All user-distributable value flows through the same accumulator. If no active
+    // weighted stake remains, the value must be routed to treasury instead of stored.
+    function _routeOrDistributeValue(uint256 amount) internal {
+        if (totalWeightedStaked == 0) {
+            if (treasury == address(0)) {
+                revert ZeroAddress();
+            }
 
-    function _requireClaimAllowed() internal view {
-        _requireNotPaused();
-        if (emergencyMode) {
-            revert EmergencyModeActive();
+            stakingToken.safeTransfer(treasury, amount);
+            return;
         }
+
+        _distributeRewards(amount);
     }
 
+    // The accumulator is updated only against active weighted stake. Early-withdraw
+    // paths remove the exiting position before calling this so the exiter cannot
+    // share in its own penalty or forfeited rewards.
     function _distributeRewards(uint256 amount) internal {
-        // Rewards are distributed by weighted stake only, never by raw principal or vault balance.
         accRewardPerWeightedShare += amount * ACC_PRECISION / totalWeightedStaked;
-    }
-
-    function _pendingRewards(Position memory position) internal view returns (uint256) {
-        return _calculateRewardDebt(position.weightedAmount) - position.rewardDebt;
     }
 }

@@ -50,14 +50,14 @@ Remaining stakers benefit from those penalties indirectly through the protocol r
 
 ## Suggested architecture
 
-- `ChronosVault.sol`
+- `src/ChronosVault.sol`
   - main staking contract
   - stake / unstake / claim / accounting
-- `MockERC20.sol`
+- `src/MockERC20.sol`
   - staking token used in tests
-- `libraries/`
+- `src/libraries/`
   - optional math or position helper libraries
-- `interfaces/`
+- `src/interfaces/`
   - optional interfaces if needed
 - `test/`
   - unit + integration-style tests
@@ -144,7 +144,7 @@ A successful implementation should include:
 
 ## Local development
 
-This repository uses Foundry with `contracts/` as the main source directory.
+This repository uses the standard Foundry layout with `src/` as the main source directory.
 
 ### Prerequisites
 

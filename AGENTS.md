@@ -183,6 +183,39 @@ After changing code:
 3. run relevant tests if possible
 4. report remaining risks or TODOs
 
+### Git workflow
+
+After completing each milestone or discrete task, follow this workflow:
+
+1. Summarize what changed.
+2. Run the relevant validation commands if the environment supports them.
+3. If validation passes, create a git commit automatically.
+4. Use small, reviewable commits scoped to the current milestone only.
+5. Do not mix unrelated refactors into the same commit.
+6. If validation fails, do not commit; instead explain the failure and propose the fix.
+
+#### Required validation order
+Run these when relevant and available:
+- `forge fmt --check`
+- `forge build`
+- `forge test`
+
+If a command is unavailable in the local environment, state that explicitly before deciding whether to commit.
+
+#### Commit message format
+Use conventional, milestone-scoped commit messages:
+
+- `feat(vault): implement stake flow`
+- `feat(vault): add reward claim logic`
+- `test(vault): add early-withdraw penalty tests`
+- `fix(vault): correct reward debt update`
+
+#### Commit policy
+- Create one commit per completed milestone or sub-milestone.
+- Only commit after explaining which files changed and why.
+- Never amend older commits unless explicitly asked.
+- Never push unless explicitly asked.
+
 ## 10. PR / commit expectations
 
 Keep changes small and reviewable.
@@ -218,8 +251,8 @@ Use this decision rule:
 ## 13. Recommended file targets
 
 Expected main files:
-- `contracts/ChronosVault.sol`
-- `contracts/MockERC20.sol`
+- `src/ChronosVault.sol`
+- `src/MockERC20.sol`
 - `test/ChronosVault.t.sol`
 
 Optional additional files only if they improve clarity:
