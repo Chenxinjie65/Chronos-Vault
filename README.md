@@ -1,6 +1,6 @@
 # Chronos Vault
 
-Chronos Vault is a single-asset staking protocol with optional lock durations, early-exit penalties, and penalty redistribution to remaining stakers.
+Chronos Vault is a single-asset staking protocol with fixed lock tiers, early-exit penalties, and penalty redistribution to remaining stakers.
 
 This project is intentionally scoped to be small-to-medium size and self-contained, so an AI coding agent can build it end-to-end without relying on external DeFi protocols.
 
@@ -9,7 +9,7 @@ This project is intentionally scoped to be small-to-medium size and self-contain
 Build a minimal but production-structured smart contract project that allows:
 
 - users to stake one ERC20 asset
-- users to choose a lock duration when staking
+- users to choose a fixed lock tier when staking
 - users to earn rewards over time from an admin-funded reward pool
 - users who exit before lock expiry to pay a penalty
 - penalties to be redistributed to remaining stakers
@@ -53,12 +53,12 @@ Remaining stakers benefit from those penalties indirectly through the protocol r
 - `src/ChronosVault.sol`
   - main staking contract
   - stake / unstake / claim / accounting
+- `src/interfaces/IChronosVault.sol`
+  - external API and NatSpec reference for integrations
 - `src/MockERC20.sol`
   - staking token used in tests
 - `src/libraries/`
   - optional math or position helper libraries
-- `src/interfaces/`
-  - optional interfaces if needed
 - `test/`
   - unit + integration-style tests
 - `script/`
@@ -108,6 +108,8 @@ Rewards are distributed using a standard accumulated reward-per-share model over
 
 Penalty redistribution should increase the reward pool for remaining users.
 
+If rewards, penalties, or forfeited rewards arise while no active weighted stake exists, that value is routed to `treasury` instead of being stored for later user capture.
+
 ## Example user flow
 
 1. Admin deploys staking token and vault.
@@ -131,6 +133,31 @@ The implementation must pay attention to:
 - clear emergency mode semantics
 - avoiding silent token loss
 - preventing stale accounting bugs
+
+## Interface and integration notes
+
+The recommended integration target is `IChronosVault`, not the concrete implementation ABI.
+
+Useful read paths:
+- `getUserPositionIds(user)`
+- `getUserActivePositionIds(user)`
+- `getPosition(positionId)`
+- `getLockTier(tierId)`
+- `getAllLockTierIds()`
+- `pendingRewards(positionId)`
+- `previewWithdraw(positionId)`
+
+Write paths:
+- `stake`
+- `claim`
+- `claimBatch`
+- `withdraw`
+- `emergencyWithdraw`
+
+`previewWithdraw(positionId)` semantics:
+- missing or withdrawn positions return `(0, 0, 0)`
+- normal mode returns the current principal/reward/penalty outcome
+- emergency mode previews the emergency path only: principal only, zero reward, zero penalty
 
 ## Acceptance expectations
 
@@ -198,3 +225,33 @@ TREASURY=0x000000000000000000000000000000000000bEEF \
 EXISTING_TOKEN=0x000000000000000000000000000000000000c0Fe \
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
 ```
+
+## Operations notes
+
+Pause mode:
+- disables `stake`
+- disables `claim` and `claimBatch`
+- disables early `withdraw`
+- still allows matured `withdraw`
+- only allows `emergencyWithdraw` if emergency mode has already been enabled
+
+Emergency mode:
+- is irreversible for this MVP
+- disables `claim` and `claimBatch`
+- normal `withdraw` is not available
+- users can recover principal with `emergencyWithdraw`
+- pending rewards from emergency-withdrawn positions are redistributed to active stakers, or routed to treasury if none remain
+
+## Current status
+
+The repository currently includes:
+- fixed lock tiers: 30d / 90d / 180d
+- multiple positions per user
+- admin-funded same-token rewards
+- early withdraw penalties with redistribution
+- zero-staker treasury routing
+- pause / emergency mode controls
+- view helpers for positions and tiers
+- batch reward claiming
+- Foundry deployment script
+- a passing Foundry test suite covering user flows, admin paths, time edges, and helper views
