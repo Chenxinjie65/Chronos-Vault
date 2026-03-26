@@ -4,23 +4,6 @@ Chronos Vault is a single-asset staking vault for EVM chains. Users stake one ER
 
 The same token is used for both principal and rewards. Admin-funded rewards, early-exit penalties, and forfeited rewards all flow through the same accounting model.
 
-## Status
-
-This repository is implemented and tested as a Foundry project.
-
-- Solidity `^0.8.24`
-- Foundry + OpenZeppelin
-- single staking token
-- multiple positions per user
-- fixed lock tiers
-- batch claiming
-- pause and emergency mode
-- deployment script and verification guide
-
-Current test status:
-
-- `61 passed, 0 failed`
-
 ## Core behavior
 
 ### Lock tiers
@@ -98,22 +81,6 @@ Useful write methods:
 - principal / reward / penalty for the normal path
 - principal only in emergency mode
 
-## Repository layout
-
-```text
-src/
-  ChronosVault.sol
-  MockERC20.sol
-  interfaces/IChronosVault.sol
-test/
-  ChronosVault.t.sol
-  MockERC20.t.sol
-script/
-  DeployChronosVault.s.sol
-docs/
-  DEPLOYMENT.md
-```
-
 ## Development
 
 ### Prerequisites
@@ -181,33 +148,6 @@ For environment setup, chain aliases, broadcasting, and block explorer verificat
 - see [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
 - use [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example) as the local template
 - use [`foundry.toml`](/home/cheng/Portfolio/Chronos-Vault/foundry.toml) for RPC and explorer alias configuration
-
-## Test coverage
-
-The current test suite covers:
-
-- weighted reward distribution across different tiers
-- reward funding with and without active stakers
-- early withdrawal penalty redistribution
-- emergency withdrawal forfeiture routing
-- pause and emergency mode behavior
-- admin configuration paths and revert cases
-- helper views and preview semantics
-- time and block edge cases
-- multiple users and multiple positions
-
-## Scope and limitations
-
-This MVP intentionally does not include:
-
-- upgradeability
-- governance
-- external yield strategies
-- ERC4626 wrappers
-- NFT positions
-- partial withdrawals
-- fee-on-transfer token support
-- rebasing token support
 
 ## License
 
