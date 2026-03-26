@@ -148,6 +148,12 @@ interface IChronosVault {
     /// @return reward Claimed reward amount.
     function claim(uint256 positionId) external returns (uint256 reward);
 
+    /// @notice Claims pending rewards across multiple positions owned by the caller.
+    /// @dev Reverts if any supplied position is unauthorized or withdrawn. Disabled while paused or in emergency mode.
+    /// @param positionIds Position ids to claim in order.
+    /// @return totalReward Total reward claimed across all positions.
+    function claimBatch(uint256[] calldata positionIds) external returns (uint256 totalReward);
+
     /// @notice Withdraws an active position through the normal path.
     /// @dev
     /// - Matured withdrawals return principal plus pending rewards.

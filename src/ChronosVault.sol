@@ -193,22 +193,24 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
     function claim(uint256 positionId) external override nonReentrant returns (uint256 reward) {
         _requireClaimAllowed();
 
-        Position storage position = positions[positionId];
-        if (position.owner != msg.sender) {
-            revert NotPositionOwner();
-        }
-        if (position.withdrawn) {
-            revert PositionWithdrawn();
-        }
-
-        reward = _pendingRewards(position);
-        position.rewardDebt = _calculateRewardDebt(position.weightedAmount);
+        reward = _claimPosition(positionId, msg.sender);
 
         if (reward > 0) {
             stakingToken.safeTransfer(msg.sender, reward);
         }
+    }
 
-        emit Claimed(msg.sender, positionId, reward);
+    function claimBatch(uint256[] calldata positionIds) external override nonReentrant returns (uint256 totalReward) {
+        _requireClaimAllowed();
+
+        uint256 positionsLength = positionIds.length;
+        for (uint256 i; i < positionsLength; ++i) {
+            totalReward += _claimPosition(positionIds[i], msg.sender);
+        }
+
+        if (totalReward > 0) {
+            stakingToken.safeTransfer(msg.sender, totalReward);
+        }
     }
 
     function withdraw(uint256 positionId) external override nonReentrant {
@@ -336,6 +338,21 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
         if (paused()) {
             revert Pausable.EnforcedPause();
         }
+    }
+
+    function _claimPosition(uint256 positionId, address claimant) internal returns (uint256 reward) {
+        Position storage position = positions[positionId];
+        if (position.owner != claimant) {
+            revert NotPositionOwner();
+        }
+        if (position.withdrawn) {
+            revert PositionWithdrawn();
+        }
+
+        reward = _pendingRewards(position);
+        position.rewardDebt = _calculateRewardDebt(position.weightedAmount);
+
+        emit Claimed(claimant, positionId, reward);
     }
 
     function _pendingRewards(Position memory position) internal view returns (uint256) {

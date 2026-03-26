@@ -415,6 +415,106 @@ contract ChronosVaultTest {
         _assertEq(balanceAfterSecondClaim, balanceAfterFirstClaim, "second claim should not change balance");
     }
 
+    function testClaimBatchTransfersCombinedRewardsForMultiplePositions() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 firstAmount = 100 ether;
+        uint256 secondAmount = 100 ether;
+        uint256 rewardAmount = 50 ether;
+        uint256[] memory positionIds = new uint256[](2);
+
+        _assertTrue(token.approve(address(vault), firstAmount + secondAmount + rewardAmount), "approve should succeed");
+
+        positionIds[0] = vault.stake(firstAmount, vault.TIER_30_DAYS());
+        positionIds[1] = vault.stake(secondAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        uint256 balanceBeforeClaim = token.balanceOf(address(this));
+        uint256 totalReward = vault.claimBatch(positionIds);
+        uint256 balanceAfterClaim = token.balanceOf(address(this));
+        ChronosVault.Position memory firstPosition = vault.getPosition(positionIds[0]);
+        ChronosVault.Position memory secondPosition = vault.getPosition(positionIds[1]);
+
+        _assertEq(totalReward, rewardAmount, "unexpected batch claim total");
+        _assertEq(balanceAfterClaim - balanceBeforeClaim, rewardAmount, "unexpected batch claim transfer");
+        _assertEq(
+            vault.pendingRewards(positionIds[0]), 0, "first position should have no pending rewards after batch claim"
+        );
+        _assertEq(
+            vault.pendingRewards(positionIds[1]), 0, "second position should have no pending rewards after batch claim"
+        );
+        _assertEq(firstPosition.rewardDebt, 20 ether, "unexpected first position reward debt after batch claim");
+        _assertEq(secondPosition.rewardDebt, 30 ether, "unexpected second position reward debt after batch claim");
+    }
+
+    function testClaimBatchAllowsZeroRewardPositions() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256[] memory positionIds = new uint256[](2);
+
+        _assertTrue(token.approve(address(vault), 210 ether), "approve should succeed");
+
+        positionIds[0] = vault.stake(100 ether, vault.TIER_30_DAYS());
+        vault.fundRewards(10 ether);
+        positionIds[1] = vault.stake(100 ether, vault.TIER_90_DAYS());
+
+        _assertEq(vault.pendingRewards(positionIds[0]), 10 ether, "first position should have funded rewards");
+        _assertEq(vault.pendingRewards(positionIds[1]), 0, "second position should start with zero pending rewards");
+        _assertEq(vault.claimBatch(positionIds), 10 ether, "batch claim should allow zero-reward positions");
+        _assertEq(vault.pendingRewards(positionIds[0]), 0, "first position should be cleared after batch claim");
+        _assertEq(vault.pendingRewards(positionIds[1]), 0, "second position should remain at zero pending rewards");
+    }
+
+    function testClaimBatchRevertsForUnauthorizedPosition() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser bob = new VaultUser();
+        uint256[] memory positionIds = new uint256[](2);
+
+        token.mint(address(bob), 100 ether);
+        _assertTrue(token.approve(address(vault), 110 ether), "approve should succeed");
+        bob.approveToken(token, address(vault), 100 ether);
+
+        positionIds[0] = vault.stake(100 ether, vault.TIER_30_DAYS());
+        positionIds[1] = bob.stake(vault, 100 ether, vault.TIER_90_DAYS());
+        vault.fundRewards(10 ether);
+
+        (bool ok, bytes memory returndata) =
+            address(bob).call(abi.encodeCall(VaultUser.claimBatch, (vault, positionIds)));
+
+        _assertTrue(!ok, "batch claim should revert for unauthorized positions");
+        _assertRevertSelector(returndata, ChronosVault.NotPositionOwner.selector);
+    }
+
+    function testClaimBatchRevertsWhilePaused() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256[] memory positionIds = new uint256[](1);
+
+        _assertTrue(token.approve(address(vault), 110 ether), "approve should succeed");
+
+        positionIds[0] = vault.stake(100 ether, vault.TIER_30_DAYS());
+        vault.fundRewards(10 ether);
+        vault.pause();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.claimBatch, (positionIds)));
+
+        _assertTrue(!ok, "batch claim should revert while paused");
+        _assertRevertSelector(returndata, Pausable.EnforcedPause.selector);
+    }
+
+    function testClaimBatchRevertsDuringEmergencyMode() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256[] memory positionIds = new uint256[](1);
+
+        _assertTrue(token.approve(address(vault), 110 ether), "approve should succeed");
+
+        positionIds[0] = vault.stake(100 ether, vault.TIER_30_DAYS());
+        vault.fundRewards(10 ether);
+        vault.enableEmergencyMode();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.claimBatch, (positionIds)));
+
+        _assertTrue(!ok, "batch claim should revert during emergency mode");
+        _assertRevertSelector(returndata, ChronosVault.EmergencyModeActive.selector);
+    }
+
     function testMultipleUsersDifferentWeightsAcrossFundingRoundsAccrueExactly() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         VaultUser bob = new VaultUser();
@@ -1068,6 +1168,10 @@ contract VaultUser {
 
     function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
         return vault.claim(positionId);
+    }
+
+    function claimBatch(ChronosVault vault, uint256[] memory positionIds) external returns (uint256) {
+        return vault.claimBatch(positionIds);
     }
 
     function setLockTier(ChronosVault vault, uint256 tierId, uint64 duration, uint256 weight, bool enabled) external {
