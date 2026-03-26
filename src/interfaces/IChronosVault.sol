@@ -67,6 +67,12 @@ interface IChronosVault {
         address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 rewardOut, uint256 penalty
     );
 
+    /// @notice Emitted when the owner updates the early exit penalty.
+    event EarlyExitPenaltyUpdated(uint256 oldPenaltyBps, uint256 newPenaltyBps);
+
+    /// @notice Emitted when the owner updates the treasury address.
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+
     /// @notice ERC20 token used for both staking principal and rewards.
     function stakingToken() external view returns (IERC20);
 
@@ -87,6 +93,9 @@ interface IChronosVault {
 
     /// @notice Early exit penalty in basis points applied before unlock.
     function earlyExitPenaltyBps() external view returns (uint256);
+
+    /// @notice Maximum early exit penalty allowed by admin configuration.
+    function MAX_EARLY_EXIT_PENALTY_BPS() external pure returns (uint256);
 
     /// @notice Whether emergency mode has been permanently enabled for this MVP.
     function emergencyMode() external view returns (bool);

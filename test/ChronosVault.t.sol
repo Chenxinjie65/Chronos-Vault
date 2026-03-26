@@ -3,9 +3,20 @@ pragma solidity ^0.8.24;
 
 import {ChronosVault} from "../src/ChronosVault.sol";
 import {MockERC20} from "../src/MockERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
+struct Log {
+    bytes32[] topics;
+    bytes data;
+    address emitter;
+}
+
 interface Vm {
+    function getRecordedLogs() external returns (Log[] memory);
+
+    function recordLogs() external;
+
     function roll(uint256 newHeight) external;
 
     function warp(uint256 newTimestamp) external;
@@ -77,6 +88,175 @@ contract ChronosVaultTest {
 
         _assertTrue(!ok, "fundRewards should revert when treasury is zero");
         _assertRevertSelector(returndata, ChronosVault.ZeroAddress.selector);
+    }
+
+    function testSetEarlyExitPenaltyBpsUpdatesStateAndEmitsEvent() public {
+        (, ChronosVault vault) = _deployVault();
+
+        vm.recordLogs();
+        vault.setEarlyExitPenaltyBps(vault.MAX_EARLY_EXIT_PENALTY_BPS());
+        Log[] memory entries = vm.getRecordedLogs();
+        (uint256 oldPenaltyBps, uint256 newPenaltyBps) = abi.decode(entries[0].data, (uint256, uint256));
+
+        _assertEq(vault.earlyExitPenaltyBps(), vault.MAX_EARLY_EXIT_PENALTY_BPS(), "unexpected updated penalty bps");
+        _assertEq(entries.length, 1, "expected one penalty update log");
+        _assertEq(entries[0].emitter, address(vault), "unexpected penalty update emitter");
+        _assertEq(
+            uint256(entries[0].topics[0]),
+            uint256(keccak256("EarlyExitPenaltyUpdated(uint256,uint256)")),
+            "unexpected penalty update topic"
+        );
+        _assertEq(oldPenaltyBps, vault.DEFAULT_EARLY_EXIT_PENALTY_BPS(), "unexpected old penalty bps");
+        _assertEq(newPenaltyBps, vault.MAX_EARLY_EXIT_PENALTY_BPS(), "unexpected new penalty bps");
+    }
+
+    function testSetEarlyExitPenaltyBpsRevertsAboveConfiguredCap() public {
+        (, ChronosVault vault) = _deployVault();
+
+        (bool ok, bytes memory returndata) = address(vault).call(
+            abi.encodeCall(ChronosVault.setEarlyExitPenaltyBps, (vault.MAX_EARLY_EXIT_PENALTY_BPS() + 1))
+        );
+
+        _assertTrue(!ok, "penalty update should revert above cap");
+        _assertRevertSelector(returndata, ChronosVault.InvalidAmount.selector);
+    }
+
+    function testSetEarlyExitPenaltyBpsRevertsForUnauthorizedCaller() public {
+        (, ChronosVault vault) = _deployVault();
+        VaultUser nonOwner = new VaultUser();
+
+        (bool ok, bytes memory returndata) =
+            address(nonOwner).call(abi.encodeCall(VaultUser.setPenaltyBps, (vault, uint256(500))));
+
+        _assertTrue(!ok, "non-owner penalty update should revert");
+        _assertRevertSelector(returndata, Ownable.OwnableUnauthorizedAccount.selector);
+    }
+
+    function testPreviewWithdrawUsesUpdatedPenaltyBps() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        vault.setEarlyExitPenaltyBps(2_500);
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+
+        (uint256 principalOut,, uint256 penalty) = vault.previewWithdraw(positionId);
+
+        _assertEq(principalOut, 75 ether, "updated penalty should affect preview principal");
+        _assertEq(penalty, 25 ether, "updated penalty should affect preview penalty");
+    }
+
+    function testSetTreasuryUpdatesStateAndEmitsEvent() public {
+        (, ChronosVault vault) = _deployVault();
+        address newTreasury = address(0xCAFE);
+
+        vm.recordLogs();
+        vault.setTreasury(newTreasury);
+        Log[] memory entries = vm.getRecordedLogs();
+
+        _assertEq(vault.treasury(), newTreasury, "unexpected updated treasury");
+        _assertEq(entries.length, 1, "expected one treasury update log");
+        _assertEq(entries[0].emitter, address(vault), "unexpected treasury update emitter");
+        _assertEq(
+            uint256(entries[0].topics[0]),
+            uint256(keccak256("TreasuryUpdated(address,address)")),
+            "unexpected treasury update topic"
+        );
+        _assertEq(uint256(entries[0].topics[1]), uint256(uint160(TREASURY)), "unexpected old treasury topic");
+        _assertEq(uint256(entries[0].topics[2]), uint256(uint160(newTreasury)), "unexpected new treasury topic");
+    }
+
+    function testSetTreasuryRevertsForUnauthorizedCaller() public {
+        (, ChronosVault vault) = _deployVault();
+        VaultUser nonOwner = new VaultUser();
+
+        (bool ok, bytes memory returndata) =
+            address(nonOwner).call(abi.encodeCall(VaultUser.setTreasury, (vault, address(0xCAFE))));
+
+        _assertTrue(!ok, "non-owner treasury update should revert");
+        _assertRevertSelector(returndata, Ownable.OwnableUnauthorizedAccount.selector);
+    }
+
+    function testSetTreasuryRevertsForZeroAddress() public {
+        (, ChronosVault vault) = _deployVault();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.setTreasury, (address(0))));
+
+        _assertTrue(!ok, "treasury update should revert for zero address");
+        _assertRevertSelector(returndata, ChronosVault.ZeroAddress.selector);
+    }
+
+    function testSetLockTierCanDisableTierAndDisabledTierCannotBeUsed() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+
+        vault.setLockTier(vault.TIER_30_DAYS(), 30 days, 1e18, false);
+        (,, bool enabled) = vault.lockTiers(vault.TIER_30_DAYS());
+        _assertEq(enabled ? 1 : 0, 0, "tier should be disabled");
+        _assertTrue(token.approve(address(vault), 1 ether), "approve should succeed");
+
+        (bool ok, bytes memory returndata) =
+            address(vault).call(abi.encodeCall(ChronosVault.stake, (1 ether, vault.TIER_30_DAYS())));
+
+        _assertTrue(!ok, "disabled tier should not be usable");
+        _assertRevertSelector(returndata, ChronosVault.InvalidTier.selector);
+    }
+
+    function testSetLockTierRevertsForZeroDuration() public {
+        (, ChronosVault vault) = _deployVault();
+
+        (bool ok, bytes memory returndata) =
+            address(vault).call(abi.encodeCall(ChronosVault.setLockTier, (uint256(7), uint64(0), 1e18, true)));
+
+        _assertTrue(!ok, "zero-duration tier should revert");
+        _assertRevertSelector(returndata, ChronosVault.InvalidLockTierConfig.selector);
+    }
+
+    function testSetLockTierRevertsForZeroWeight() public {
+        (, ChronosVault vault) = _deployVault();
+
+        (bool ok, bytes memory returndata) = address(vault).call(
+            abi.encodeCall(ChronosVault.setLockTier, (uint256(7), uint64(30 days), uint256(0), true))
+        );
+
+        _assertTrue(!ok, "zero-weight tier should revert");
+        _assertRevertSelector(returndata, ChronosVault.InvalidLockTierConfig.selector);
+    }
+
+    function testSetLockTierRevertsForUnauthorizedCaller() public {
+        (, ChronosVault vault) = _deployVault();
+        VaultUser nonOwner = new VaultUser();
+
+        (bool ok, bytes memory returndata) = address(nonOwner).call(
+            abi.encodeCall(
+                VaultUser.setLockTier, (vault, uint256(9), uint64(45 days), uint256(1_250_000_000_000_000_000), true)
+            )
+        );
+
+        _assertTrue(!ok, "non-owner lock tier update should revert");
+        _assertRevertSelector(returndata, Ownable.OwnableUnauthorizedAccount.selector);
+    }
+
+    function testEnableEmergencyModeRevertsOnSecondCall() public {
+        (, ChronosVault vault) = _deployVault();
+
+        vault.enableEmergencyMode();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.enableEmergencyMode, ()));
+
+        _assertTrue(!ok, "second emergency mode enable should revert");
+        _assertRevertSelector(returndata, ChronosVault.EmergencyModeAlreadyEnabled.selector);
+    }
+
+    function testEnableEmergencyModeRevertsForUnauthorizedCaller() public {
+        (, ChronosVault vault) = _deployVault();
+        VaultUser nonOwner = new VaultUser();
+
+        (bool ok, bytes memory returndata) =
+            address(nonOwner).call(abi.encodeCall(VaultUser.enableEmergencyMode, (vault)));
+
+        _assertTrue(!ok, "non-owner emergency mode enable should revert");
+        _assertRevertSelector(returndata, Ownable.OwnableUnauthorizedAccount.selector);
     }
 
     function testGetUserPositionIdsAndGetPositionExposeStoredData() public {
@@ -882,8 +1062,24 @@ contract VaultUser {
         token.approve(spender, amount);
     }
 
+    function enableEmergencyMode(ChronosVault vault) external {
+        vault.enableEmergencyMode();
+    }
+
     function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
         return vault.claim(positionId);
+    }
+
+    function setLockTier(ChronosVault vault, uint256 tierId, uint64 duration, uint256 weight, bool enabled) external {
+        vault.setLockTier(tierId, duration, weight, enabled);
+    }
+
+    function setPenaltyBps(ChronosVault vault, uint256 newPenaltyBps) external {
+        vault.setEarlyExitPenaltyBps(newPenaltyBps);
+    }
+
+    function setTreasury(ChronosVault vault, address newTreasury) external {
+        vault.setTreasury(newTreasury);
     }
 
     function stake(ChronosVault vault, uint256 amount, uint256 tierId) external returns (uint256) {

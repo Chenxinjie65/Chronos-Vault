@@ -15,6 +15,7 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
     uint256 public constant WEIGHT_SCALE = 1e18;
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint256 public constant DEFAULT_EARLY_EXIT_PENALTY_BPS = 1_000;
+    uint256 public constant override MAX_EARLY_EXIT_PENALTY_BPS = 3_000;
 
     uint256 public constant TIER_30_DAYS = 0;
     uint256 public constant TIER_90_DAYS = 1;
@@ -291,11 +292,14 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
     }
 
     function setEarlyExitPenaltyBps(uint256 newPenaltyBps) external override onlyOwner {
-        if (newPenaltyBps > BPS_DENOMINATOR) {
+        if (newPenaltyBps > MAX_EARLY_EXIT_PENALTY_BPS) {
             revert InvalidAmount();
         }
 
+        uint256 oldPenaltyBps = earlyExitPenaltyBps;
         earlyExitPenaltyBps = newPenaltyBps;
+
+        emit EarlyExitPenaltyUpdated(oldPenaltyBps, newPenaltyBps);
     }
 
     function setTreasury(address newTreasury) external override onlyOwner {
@@ -303,7 +307,10 @@ contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
             revert ZeroAddress();
         }
 
+        address oldTreasury = treasury;
         treasury = newTreasury;
+
+        emit TreasuryUpdated(oldTreasury, newTreasury);
     }
 
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
