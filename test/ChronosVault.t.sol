@@ -4,8 +4,13 @@ pragma solidity ^0.8.24;
 import {ChronosVault} from "../contracts/ChronosVault.sol";
 import {MockERC20} from "../contracts/MockERC20.sol";
 
+interface Vm {
+    function warp(uint256 newTimestamp) external;
+}
+
 contract ChronosVaultTest {
     address internal constant TREASURY = address(0xBEEF);
+    Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     function testPendingRewardsMatchesWeightedDistribution() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
@@ -131,6 +136,76 @@ contract ChronosVaultTest {
 
         _assertTrue(!ok, "claim should revert for unauthorized caller");
         _assertRevertSelector(returndata, ChronosVault.NotPositionOwner.selector);
+    }
+
+    function testWithdrawAfterUnlockReturnsPrincipalAndRewards() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 30 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        vm.warp(block.timestamp + 30 days);
+
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.withdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+        (
+            address owner,
+            uint256 principal,
+            uint256 weightedAmount,
+            uint256 rewardDebt,
+            uint64 unlockTime,
+            uint256 tierId,
+            bool withdrawn
+        ) = vault.positions(positionId);
+
+        _assertEq(
+            balanceAfterWithdraw - balanceBeforeWithdraw, stakeAmount + rewardAmount, "unexpected withdraw payout"
+        );
+        _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
+        _assertEq(vault.pendingRewards(positionId), 0, "pending rewards should be cleared");
+        _assertEq(token.balanceOf(address(vault)), 0, "vault balance should be cleared");
+        _assertEq(owner, address(this), "owner should remain as history");
+        _assertEq(principal, stakeAmount, "principal should remain as history");
+        _assertEq(weightedAmount, 100 ether, "weighted amount should remain as history");
+        _assertEq(rewardDebt, rewardAmount, "reward debt should reflect claimed rewards");
+        _assertEq(uint256(unlockTime), block.timestamp, "unlock time should match matured tier");
+        _assertEq(tierId, vault.TIER_30_DAYS(), "tier id should remain as history");
+        _assertTrue(withdrawn, "position should be withdrawn");
+    }
+
+    function testWithdrawRevertsBeforeUnlock() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.withdraw, (positionId)));
+
+        _assertTrue(!ok, "withdraw should revert before unlock");
+        _assertRevertSelector(returndata, ChronosVault.PositionNotMatured.selector);
+    }
+
+    function testWithdrawRevertsOnSecondCall() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vm.warp(block.timestamp + 30 days);
+        vault.withdraw(positionId);
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.withdraw, (positionId)));
+
+        _assertTrue(!ok, "second withdraw should revert");
+        _assertRevertSelector(returndata, ChronosVault.PositionWithdrawn.selector);
     }
 
     function testStakeCreatesPositionWithExpectedAccounting() public {

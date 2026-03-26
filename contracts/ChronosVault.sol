@@ -23,6 +23,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     error InvalidWeightedAmount();
     error NotPositionOwner();
     error PositionWithdrawn();
+    error PositionNotMatured();
 
     struct Position {
         address owner;
@@ -64,6 +65,9 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     );
     event RewardsFunded(address indexed funder, uint256 amount);
     event Claimed(address indexed user, uint256 indexed positionId, uint256 reward);
+    event Withdrawn(
+        address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 rewardOut, uint256 penalty
+    );
 
     constructor(address stakingToken_, address treasury_) Ownable(msg.sender) {
         if (stakingToken_ == address(0) || treasury_ == address(0)) {
@@ -168,6 +172,31 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         }
 
         emit Claimed(msg.sender, positionId, reward);
+    }
+
+    function withdraw(uint256 positionId) external nonReentrant {
+        Position storage position = positions[positionId];
+        if (position.owner != msg.sender) {
+            revert NotPositionOwner();
+        }
+        if (position.withdrawn) {
+            revert PositionWithdrawn();
+        }
+        if (block.timestamp < position.unlockTime) {
+            revert PositionNotMatured();
+        }
+
+        uint256 principalOut = position.principal;
+        uint256 rewardOut = _pendingRewards(position);
+
+        totalPrincipalStaked -= principalOut;
+        totalWeightedStaked -= position.weightedAmount;
+        position.rewardDebt = _calculateRewardDebt(position.weightedAmount);
+        position.withdrawn = true;
+
+        stakingToken.safeTransfer(msg.sender, principalOut + rewardOut);
+
+        emit Withdrawn(msg.sender, positionId, principalOut, rewardOut, 0);
     }
 
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
