@@ -6,6 +6,8 @@ import {MockERC20} from "../src/MockERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface Vm {
+    function roll(uint256 newHeight) external;
+
     function warp(uint256 newTimestamp) external;
 }
 
@@ -77,6 +79,118 @@ contract ChronosVaultTest {
         _assertRevertSelector(returndata, ChronosVault.ZeroAddress.selector);
     }
 
+    function testGetUserPositionIdsAndGetPositionExposeStoredData() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser secondaryUser = new VaultUser();
+        uint256 firstAmount = 50 ether;
+        uint256 secondAmount = 60 ether;
+        uint256 thirdAmount = 40 ether;
+        uint256 expectedSecondUnlockTime = block.timestamp + 90 days;
+
+        token.mint(address(secondaryUser), thirdAmount);
+        _assertTrue(token.approve(address(vault), firstAmount + secondAmount), "approve should succeed");
+        secondaryUser.approveToken(token, address(vault), thirdAmount);
+
+        uint256 firstPositionId = vault.stake(firstAmount, vault.TIER_30_DAYS());
+        uint256 secondPositionId = vault.stake(secondAmount, vault.TIER_90_DAYS());
+        uint256 thirdPositionId = secondaryUser.stake(vault, thirdAmount, vault.TIER_180_DAYS());
+
+        uint256[] memory primaryIds = vault.getUserPositionIds(address(this));
+        uint256[] memory secondaryIds = vault.getUserPositionIds(address(secondaryUser));
+        uint256[] memory emptyIds = vault.getUserPositionIds(address(0xCAFE));
+        ChronosVault.Position memory position = vault.getPosition(secondPositionId);
+
+        _assertEq(primaryIds.length, 2, "unexpected primary user position count");
+        _assertEq(primaryIds[0], firstPositionId, "unexpected first primary user position id");
+        _assertEq(primaryIds[1], secondPositionId, "unexpected second primary user position id");
+        _assertEq(secondaryIds.length, 1, "unexpected secondary user position count");
+        _assertEq(secondaryIds[0], thirdPositionId, "unexpected secondary user position id");
+        _assertEq(emptyIds.length, 0, "empty user should have no positions");
+
+        _assertEq(position.owner, address(this), "unexpected helper position owner");
+        _assertEq(position.principal, secondAmount, "unexpected helper position principal");
+        _assertEq(position.weightedAmount, 90 ether, "unexpected helper weighted amount");
+        _assertEq(position.rewardDebt, 0, "unexpected helper reward debt");
+        _assertEq(uint256(position.unlockTime), expectedSecondUnlockTime, "unexpected helper unlock time");
+        _assertEq(position.tierId, vault.TIER_90_DAYS(), "unexpected helper tier id");
+        _assertTrue(!position.withdrawn, "helper position should be active");
+    }
+
+    function testPreviewWithdrawReturnsEarlyWithdrawBreakdown() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+
+        _assertEq(principalOut, 90 ether, "unexpected early-withdraw preview principal");
+        _assertEq(rewardOut, rewardAmount, "unexpected early-withdraw preview reward");
+        _assertEq(penalty, 10 ether, "unexpected early-withdraw preview penalty");
+    }
+
+    function testPreviewWithdrawReturnsMaturedBreakdown() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 45 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        uint256 unlockTime = vault.getPosition(positionId).unlockTime;
+        vault.fundRewards(rewardAmount);
+        vm.warp(unlockTime);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+
+        _assertEq(principalOut, stakeAmount, "unexpected matured preview principal");
+        _assertEq(rewardOut, rewardAmount, "unexpected matured preview reward");
+        _assertEq(penalty, 0, "matured preview should have no penalty");
+    }
+
+    function testPreviewWithdrawReturnsEmergencyModeBreakdown() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 30 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+        vault.enableEmergencyMode();
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+
+        _assertEq(principalOut, stakeAmount, "unexpected emergency preview principal");
+        _assertEq(rewardOut, 0, "emergency preview should not expose rewards");
+        _assertEq(penalty, 0, "emergency preview should not charge a penalty");
+    }
+
+    function testPreviewWithdrawReturnsZeroForMissingAndWithdrawnPositions() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        (uint256 missingPrincipalOut, uint256 missingRewardOut, uint256 missingPenalty) = vault.previewWithdraw(999);
+        _assertEq(missingPrincipalOut, 0, "missing position should preview zero principal");
+        _assertEq(missingRewardOut, 0, "missing position should preview zero reward");
+        _assertEq(missingPenalty, 0, "missing position should preview zero penalty");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vm.warp(block.timestamp + 30 days);
+        vault.withdraw(positionId);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+        _assertEq(principalOut, 0, "withdrawn position should preview zero principal");
+        _assertEq(rewardOut, 0, "withdrawn position should preview zero reward");
+        _assertEq(penalty, 0, "withdrawn position should preview zero penalty");
+    }
+
     function testClaimTransfersPendingRewards() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 stakeAmount = 100 ether;
@@ -119,6 +233,40 @@ contract ChronosVaultTest {
         _assertEq(balanceAfterFirstClaim - balanceBeforeFirstClaim, rewardAmount, "unexpected first claim transfer");
         _assertEq(secondClaimedReward, 0, "second claim should not pay new rewards");
         _assertEq(balanceAfterSecondClaim, balanceAfterFirstClaim, "second claim should not change balance");
+    }
+
+    function testMultipleUsersDifferentWeightsAcrossFundingRoundsAccrueExactly() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser bob = new VaultUser();
+        VaultUser carol = new VaultUser();
+
+        token.mint(address(bob), 100 ether);
+        token.mint(address(carol), 40 ether);
+
+        _assertTrue(token.approve(address(vault), 225 ether), "approve should succeed");
+        bob.approveToken(token, address(vault), 100 ether);
+        carol.approveToken(token, address(vault), 40 ether);
+
+        uint256 alicePositionId = vault.stake(120 ether, vault.TIER_30_DAYS());
+        uint256 bobPositionId = bob.stake(vault, 100 ether, vault.TIER_90_DAYS());
+        uint256 carolPositionId = carol.stake(vault, 40 ether, vault.TIER_180_DAYS());
+
+        vault.fundRewards(35 ether);
+        vm.warp(block.timestamp + 7 days);
+        vault.fundRewards(70 ether);
+
+        _assertEq(vault.pendingRewards(alicePositionId), 36 ether, "unexpected alice pending rewards");
+        _assertEq(vault.pendingRewards(bobPositionId), 45 ether, "unexpected bob pending rewards");
+        _assertEq(vault.pendingRewards(carolPositionId), 24 ether, "unexpected carol pending rewards");
+
+        uint256 aliceBalanceBeforeClaim = token.balanceOf(address(this));
+        _assertEq(vault.claim(alicePositionId), 36 ether, "unexpected alice claim reward");
+        _assertEq(token.balanceOf(address(this)) - aliceBalanceBeforeClaim, 36 ether, "unexpected alice claim transfer");
+        _assertEq(bob.claim(vault, bobPositionId), 45 ether, "unexpected bob claim reward");
+        _assertEq(carol.claim(vault, carolPositionId), 24 ether, "unexpected carol claim reward");
+        _assertEq(token.balanceOf(address(bob)), 45 ether, "unexpected bob token balance");
+        _assertEq(token.balanceOf(address(carol)), 24 ether, "unexpected carol token balance");
+        _assertEq(token.balanceOf(address(vault)), 260 ether, "vault should retain only principal");
     }
 
     function testClaimRevertsForUnauthorizedCaller() public {
@@ -208,6 +356,39 @@ contract ChronosVaultTest {
         _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
     }
 
+    function testPausedBeforeUnlockThenAtUnlockStillAllowsWithdraw() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        uint256 unlockTime = vault.getPosition(positionId).unlockTime;
+        vault.fundRewards(rewardAmount);
+        vault.pause();
+
+        vm.warp(unlockTime - 1);
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.withdraw, (positionId)));
+        _assertTrue(!ok, "withdraw should still revert while paused before unlock");
+        _assertRevertSelector(returndata, Pausable.EnforcedPause.selector);
+
+        vm.warp(unlockTime);
+
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.withdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+
+        _assertEq(
+            balanceAfterWithdraw - balanceBeforeWithdraw,
+            stakeAmount + rewardAmount,
+            "withdraw should work once the position matures"
+        );
+        _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared after paused boundary withdraw");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared after paused boundary withdraw");
+    }
+
     function testWithdrawAfterUnlockReturnsPrincipalAndRewards() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 stakeAmount = 100 ether;
@@ -249,6 +430,50 @@ contract ChronosVaultTest {
         _assertTrue(withdrawn, "position should be withdrawn");
     }
 
+    function testClaimThenWithdrawOnlyPaysNewRewardsAndPrincipal() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 firstRewardAmount = 20 ether;
+        uint256 secondRewardAmount = 30 ether;
+
+        _assertTrue(
+            token.approve(address(vault), stakeAmount + firstRewardAmount + secondRewardAmount),
+            "approve should succeed"
+        );
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        uint256 unlockTime = vault.getPosition(positionId).unlockTime;
+
+        vault.fundRewards(firstRewardAmount);
+        _assertEq(vault.claim(positionId), firstRewardAmount, "unexpected first claim reward");
+        _assertEq(vault.pendingRewards(positionId), 0, "claimed rewards should be cleared");
+
+        vm.warp(block.timestamp + 10 days);
+        vault.fundRewards(secondRewardAmount);
+        vm.warp(unlockTime);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.withdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+        ChronosVault.Position memory position = vault.getPosition(positionId);
+
+        _assertEq(principalOut, stakeAmount, "unexpected preview principal after prior claim");
+        _assertEq(rewardOut, secondRewardAmount, "unexpected preview reward after prior claim");
+        _assertEq(penalty, 0, "matured withdraw should not preview a penalty");
+        _assertEq(
+            balanceAfterWithdraw - balanceBeforeWithdraw,
+            stakeAmount + secondRewardAmount,
+            "withdraw should pay principal plus only unclaimed rewards"
+        );
+        _assertEq(
+            position.rewardDebt,
+            firstRewardAmount + secondRewardAmount,
+            "reward debt should track total claimed rewards"
+        );
+        _assertTrue(position.withdrawn, "position should be withdrawn after claim then withdraw");
+    }
+
     function testEarlyWithdrawDeductsPenalty() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         VaultUser exiter = new VaultUser();
@@ -266,6 +491,74 @@ contract ChronosVaultTest {
         _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared");
         _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
         _assertEq(vault.pendingRewards(positionId), 0, "withdrawn position should have no pending rewards");
+    }
+
+    function testWithdrawExactlyAtUnlockAvoidsPenalty() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 positionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+        uint256 unlockTime = vault.getPosition(positionId).unlockTime;
+
+        vm.warp(unlockTime);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+        exiter.withdraw(vault, positionId);
+
+        _assertEq(principalOut, stakeAmount, "principal should be fully withdrawable at unlock");
+        _assertEq(rewardOut, 0, "unexpected reward at exact unlock");
+        _assertEq(penalty, 0, "penalty should be zero at exact unlock");
+        _assertEq(token.balanceOf(address(exiter)), stakeAmount, "exact unlock should avoid the early-exit penalty");
+        _assertEq(token.balanceOf(TREASURY), 0, "treasury should not receive a penalty at unlock");
+    }
+
+    function testWithdrawJustBeforeUnlockStillAppliesPenalty() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 positionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+        uint256 unlockTime = vault.getPosition(positionId).unlockTime;
+
+        vm.warp(unlockTime - 1);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+        exiter.withdraw(vault, positionId);
+
+        _assertEq(principalOut, 90 ether, "principal should still be penalized before unlock");
+        _assertEq(rewardOut, 0, "unexpected reward before unlock");
+        _assertEq(penalty, 10 ether, "expected early-withdraw penalty before unlock");
+        _assertEq(
+            token.balanceOf(address(exiter)), 90 ether, "withdraw just before unlock should pay principal minus penalty"
+        );
+        _assertEq(token.balanceOf(TREASURY), 10 ether, "treasury should receive the last-staker penalty");
+    }
+
+    function testRollingBlocksWithoutWarpDoesNotMaturePosition() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 positionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+        vm.roll(block.number + 500);
+
+        (uint256 principalOut, uint256 rewardOut, uint256 penalty) = vault.previewWithdraw(positionId);
+        exiter.withdraw(vault, positionId);
+
+        _assertEq(principalOut, 90 ether, "rolling blocks alone should not mature the position");
+        _assertEq(rewardOut, 0, "unexpected reward after block roll only");
+        _assertEq(penalty, 10 ether, "block roll only should still preview the early penalty");
+        _assertEq(token.balanceOf(address(exiter)), 90 ether, "block roll only should still incur the early penalty");
     }
 
     function testWithdrawRevertsOnSecondCall() public {
@@ -587,6 +880,10 @@ contract UnauthorizedClaimer {
 contract VaultUser {
     function approveToken(MockERC20 token, address spender, uint256 amount) external {
         token.approve(spender, amount);
+    }
+
+    function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
+        return vault.claim(positionId);
     }
 
     function stake(ChronosVault vault, uint256 amount, uint256 tierId) external returns (uint256) {

@@ -185,6 +185,37 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         return _pendingRewards(position);
     }
 
+    function getUserPositionIds(address user) external view returns (uint256[] memory) {
+        return userPositionIds[user];
+    }
+
+    function getPosition(uint256 positionId) external view returns (Position memory) {
+        return positions[positionId];
+    }
+
+    function previewWithdraw(uint256 positionId)
+        external
+        view
+        returns (uint256 principalOut, uint256 rewardOut, uint256 penalty)
+    {
+        Position memory position = positions[positionId];
+        if (position.owner == address(0) || position.withdrawn) {
+            return (0, 0, 0);
+        }
+
+        if (emergencyMode) {
+            return (position.principal, 0, 0);
+        }
+
+        rewardOut = _pendingRewards(position);
+        principalOut = position.principal;
+
+        if (block.timestamp < position.unlockTime) {
+            penalty = position.principal * earlyExitPenaltyBps / BPS_DENOMINATOR;
+            principalOut -= penalty;
+        }
+    }
+
     function claim(uint256 positionId) external nonReentrant returns (uint256 reward) {
         _requireClaimAllowed();
 
