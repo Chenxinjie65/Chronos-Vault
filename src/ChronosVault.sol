@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IChronosVault} from "./interfaces/IChronosVault.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
+contract ChronosVault is IChronosVault, Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant ACC_PRECISION = 1e24;
@@ -31,55 +32,20 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
     error EmergencyModeAlreadyEnabled();
     error EmergencyModeActive();
 
-    struct Position {
-        address owner;
-        uint256 principal;
-        uint256 weightedAmount;
-        uint256 rewardDebt;
-        uint64 unlockTime;
-        uint256 tierId;
-        bool withdrawn;
-    }
-
-    struct LockTier {
-        uint64 duration;
-        uint256 weight;
-        bool enabled;
-    }
-
-    IERC20 public immutable stakingToken;
+    IERC20 public immutable override stakingToken;
     // Future zero-staker rewards, penalties, and forfeited rewards are routed here.
-    address public treasury;
+    address public override treasury;
 
-    uint256 public nextPositionId;
-    uint256 public totalPrincipalStaked;
-    uint256 public totalWeightedStaked;
-    uint256 public accRewardPerWeightedShare;
-    uint256 public earlyExitPenaltyBps = DEFAULT_EARLY_EXIT_PENALTY_BPS;
-    bool public emergencyMode;
+    uint256 public override nextPositionId;
+    uint256 public override totalPrincipalStaked;
+    uint256 public override totalWeightedStaked;
+    uint256 public override accRewardPerWeightedShare;
+    uint256 public override earlyExitPenaltyBps = DEFAULT_EARLY_EXIT_PENALTY_BPS;
+    bool public override emergencyMode;
 
     mapping(uint256 => Position) public positions;
     mapping(address => uint256[]) public userPositionIds;
-    mapping(uint256 => LockTier) public lockTiers;
-
-    event LockTierUpdated(uint256 indexed tierId, uint64 duration, uint256 weight, bool enabled);
-    event Staked(
-        address indexed user,
-        uint256 indexed positionId,
-        uint256 amount,
-        uint256 tierId,
-        uint256 unlockTime,
-        uint256 weightedAmount
-    );
-    event RewardsFunded(address indexed funder, uint256 amount);
-    event Claimed(address indexed user, uint256 indexed positionId, uint256 reward);
-    event EmergencyModeEnabled(address indexed account);
-    event EmergencyWithdrawn(
-        address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 forfeitedReward
-    );
-    event Withdrawn(
-        address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 rewardOut, uint256 penalty
-    );
+    mapping(uint256 => LockTier) public override lockTiers;
 
     constructor(address stakingToken_, address treasury_) Ownable(msg.sender) {
         if (stakingToken_ == address(0) || treasury_ == address(0)) {
@@ -94,19 +60,19 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         _setLockTier(TIER_180_DAYS, 180 days, 2e18, true);
     }
 
-    function setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) external onlyOwner {
+    function setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) external override onlyOwner {
         _setLockTier(tierId, duration, weight, enabled);
     }
 
-    function pause() external onlyOwner {
+    function pause() external override onlyOwner {
         _pause();
     }
 
-    function unpause() external onlyOwner {
+    function unpause() external override onlyOwner {
         _unpause();
     }
 
-    function enableEmergencyMode() external onlyOwner {
+    function enableEmergencyMode() external override onlyOwner {
         if (emergencyMode) {
             revert EmergencyModeAlreadyEnabled();
         }
@@ -116,7 +82,13 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit EmergencyModeEnabled(msg.sender);
     }
 
-    function stake(uint256 amount, uint256 tierId) external whenNotPaused nonReentrant returns (uint256 positionId) {
+    function stake(uint256 amount, uint256 tierId)
+        external
+        override
+        whenNotPaused
+        nonReentrant
+        returns (uint256 positionId)
+    {
         if (amount == 0) {
             revert InvalidAmount();
         }
@@ -156,7 +128,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit Staked(msg.sender, positionId, amount, tierId, unlockTime, weightedAmount);
     }
 
-    function fundRewards(uint256 amount) external onlyOwner nonReentrant {
+    function fundRewards(uint256 amount) external override onlyOwner nonReentrant {
         if (amount == 0) {
             revert InvalidAmount();
         }
@@ -176,7 +148,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit RewardsFunded(msg.sender, amount);
     }
 
-    function pendingRewards(uint256 positionId) public view returns (uint256) {
+    function pendingRewards(uint256 positionId) public view override returns (uint256) {
         Position memory position = positions[positionId];
         if (position.owner == address(0) || position.withdrawn) {
             return 0;
@@ -185,17 +157,18 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         return _pendingRewards(position);
     }
 
-    function getUserPositionIds(address user) external view returns (uint256[] memory) {
+    function getUserPositionIds(address user) external view override returns (uint256[] memory) {
         return userPositionIds[user];
     }
 
-    function getPosition(uint256 positionId) external view returns (Position memory) {
+    function getPosition(uint256 positionId) external view override returns (Position memory) {
         return positions[positionId];
     }
 
     function previewWithdraw(uint256 positionId)
         external
         view
+        override
         returns (uint256 principalOut, uint256 rewardOut, uint256 penalty)
     {
         Position memory position = positions[positionId];
@@ -216,7 +189,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    function claim(uint256 positionId) external nonReentrant returns (uint256 reward) {
+    function claim(uint256 positionId) external override nonReentrant returns (uint256 reward) {
         _requireClaimAllowed();
 
         Position storage position = positions[positionId];
@@ -237,7 +210,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit Claimed(msg.sender, positionId, reward);
     }
 
-    function withdraw(uint256 positionId) external nonReentrant {
+    function withdraw(uint256 positionId) external override nonReentrant {
         Position storage position = positions[positionId];
         if (position.owner != msg.sender) {
             revert NotPositionOwner();
@@ -284,7 +257,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit Withdrawn(msg.sender, positionId, payoutPrincipal, reward, penalty);
     }
 
-    function emergencyWithdraw(uint256 positionId) external nonReentrant {
+    function emergencyWithdraw(uint256 positionId) external override nonReentrant {
         if (!emergencyMode) {
             revert EmergencyModeNotEnabled();
         }
@@ -317,7 +290,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         emit EmergencyWithdrawn(msg.sender, positionId, principal, forfeitedReward);
     }
 
-    function setEarlyExitPenaltyBps(uint256 newPenaltyBps) external onlyOwner {
+    function setEarlyExitPenaltyBps(uint256 newPenaltyBps) external override onlyOwner {
         if (newPenaltyBps > BPS_DENOMINATOR) {
             revert InvalidAmount();
         }
@@ -325,7 +298,7 @@ contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
         earlyExitPenaltyBps = newPenaltyBps;
     }
 
-    function setTreasury(address newTreasury) external onlyOwner {
+    function setTreasury(address newTreasury) external override onlyOwner {
         if (newTreasury == address(0)) {
             revert ZeroAddress();
         }
