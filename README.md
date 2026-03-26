@@ -99,7 +99,7 @@ Useful write methods:
 Clone with submodules:
 
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules https://github.com/Chenxinjie65/Chronos-Vault.git
 cd Chronos-Vault
 ```
 
