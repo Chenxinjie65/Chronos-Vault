@@ -17,7 +17,10 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     uint256 public constant TIER_180_DAYS = 2;
 
     error ZeroAddress();
+    error InvalidAmount();
     error InvalidLockTierConfig();
+    error InvalidTier(uint256 tierId);
+    error InvalidWeightedAmount();
 
     struct Position {
         address owner;
@@ -49,6 +52,14 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     mapping(uint256 => LockTier) public lockTiers;
 
     event LockTierUpdated(uint256 indexed tierId, uint64 duration, uint256 weight, bool enabled);
+    event Staked(
+        address indexed user,
+        uint256 indexed positionId,
+        uint256 amount,
+        uint256 tierId,
+        uint256 unlockTime,
+        uint256 weightedAmount
+    );
 
     constructor(address stakingToken_, address treasury_) Ownable(msg.sender) {
         if (stakingToken_ == address(0) || treasury_ == address(0)) {
@@ -67,6 +78,46 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         _setLockTier(tierId, duration, weight, enabled);
     }
 
+    function stake(uint256 amount, uint256 tierId) external nonReentrant returns (uint256 positionId) {
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+
+        LockTier memory tier = lockTiers[tierId];
+        if (!tier.enabled) {
+            revert InvalidTier(tierId);
+        }
+
+        uint256 weightedAmount = _calculateWeightedAmount(amount, tier.weight);
+        if (weightedAmount == 0) {
+            revert InvalidWeightedAmount();
+        }
+
+        uint256 rewardDebt = _calculateRewardDebt(weightedAmount);
+        uint256 unlockTime = block.timestamp + tier.duration;
+
+        positionId = nextPositionId;
+        nextPositionId = positionId + 1;
+
+        positions[positionId] = Position({
+            owner: msg.sender,
+            principal: amount,
+            weightedAmount: weightedAmount,
+            rewardDebt: rewardDebt,
+            unlockTime: uint64(unlockTime),
+            tierId: tierId,
+            withdrawn: false
+        });
+
+        userPositionIds[msg.sender].push(positionId);
+        totalPrincipalStaked += amount;
+        totalWeightedStaked += weightedAmount;
+
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Staked(msg.sender, positionId, amount, tierId, unlockTime, weightedAmount);
+    }
+
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
         if (duration == 0 || weight == 0) {
             revert InvalidLockTierConfig();
@@ -75,5 +126,14 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         lockTiers[tierId] = LockTier({duration: duration, weight: weight, enabled: enabled});
 
         emit LockTierUpdated(tierId, duration, weight, enabled);
+    }
+
+    function _calculateWeightedAmount(uint256 amount, uint256 weight) internal pure returns (uint256) {
+        return amount * weight / WEIGHT_SCALE;
+    }
+
+    function _calculateRewardDebt(uint256 weightedAmount) internal view returns (uint256) {
+        // Snapshot the current accumulator so later rewards only include value added after staking.
+        return weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
     }
 }
