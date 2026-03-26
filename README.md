@@ -181,3 +181,20 @@ forge test
 ```bash
 forge fmt
 ```
+
+### Deploy
+
+Deploy a mock token and vault:
+
+```bash
+TREASURY=0x000000000000000000000000000000000000bEEF \
+forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
+```
+
+Deploy a vault using an existing staking token:
+
+```bash
+TREASURY=0x000000000000000000000000000000000000bEEF \
+EXISTING_TOKEN=0x000000000000000000000000000000000000c0Fe \
+forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
+```
