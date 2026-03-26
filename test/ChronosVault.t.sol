@@ -7,6 +7,40 @@ import {MockERC20} from "../contracts/MockERC20.sol";
 contract ChronosVaultTest {
     address internal constant TREASURY = address(0xBEEF);
 
+    function testFundRewardsWithActiveStakersUpdatesAccumulator() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 90 ether;
+        uint256 expectedAccumulator = rewardAmount * vault.ACC_PRECISION() / 150 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        vault.stake(stakeAmount, vault.TIER_90_DAYS());
+        vault.fundRewards(rewardAmount);
+
+        _assertEq(vault.accRewardPerWeightedShare(), expectedAccumulator, "unexpected accumulator");
+        _assertEq(token.balanceOf(address(vault)), stakeAmount + rewardAmount, "unexpected vault token balance");
+        _assertEq(token.balanceOf(TREASURY), 0, "treasury should not receive active rewards");
+    }
+
+    function testFundRewardsWithZeroStakersRoutesToTreasury() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 rewardAmount = 75 ether;
+
+        _assertTrue(token.approve(address(vault), rewardAmount + 10 ether), "approve should succeed");
+
+        vault.fundRewards(rewardAmount);
+
+        _assertEq(vault.accRewardPerWeightedShare(), 0, "accumulator should remain unchanged");
+        _assertEq(token.balanceOf(address(vault)), 0, "vault should not retain zero-staker rewards");
+        _assertEq(token.balanceOf(TREASURY), rewardAmount, "treasury should receive zero-staker rewards");
+
+        vault.stake(10 ether, vault.TIER_30_DAYS());
+
+        (,,, uint256 rewardDebt,,,) = vault.positions(0);
+        _assertEq(rewardDebt, 0, "future staker should not inherit routed rewards");
+    }
+
     function testStakeCreatesPositionWithExpectedAccounting() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 amount = 100 ether;

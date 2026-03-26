@@ -9,7 +9,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 contract ChronosVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint256 public constant ACC_PRECISION = 1e18;
+    uint256 public constant ACC_PRECISION = 1e24;
     uint256 public constant WEIGHT_SCALE = 1e18;
 
     uint256 public constant TIER_30_DAYS = 0;
@@ -60,6 +60,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         uint256 unlockTime,
         uint256 weightedAmount
     );
+    event RewardsFunded(address indexed funder, uint256 amount);
 
     constructor(address stakingToken_, address treasury_) Ownable(msg.sender) {
         if (stakingToken_ == address(0) || treasury_ == address(0)) {
@@ -118,6 +119,23 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         emit Staked(msg.sender, positionId, amount, tierId, unlockTime, weightedAmount);
     }
 
+    function fundRewards(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+
+        if (totalWeightedStaked == 0) {
+            stakingToken.safeTransferFrom(msg.sender, treasury, amount);
+            emit RewardsFunded(msg.sender, amount);
+            return;
+        }
+
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        _distributeRewards(amount);
+
+        emit RewardsFunded(msg.sender, amount);
+    }
+
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
         if (duration == 0 || weight == 0) {
             revert InvalidLockTierConfig();
@@ -135,5 +153,10 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     function _calculateRewardDebt(uint256 weightedAmount) internal view returns (uint256) {
         // Snapshot the current accumulator so later rewards only include value added after staking.
         return weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
+    }
+
+    function _distributeRewards(uint256 amount) internal {
+        // Rewards are distributed by weighted stake only, never by raw principal or vault balance.
+        accRewardPerWeightedShare += amount * ACC_PRECISION / totalWeightedStaked;
     }
 }
