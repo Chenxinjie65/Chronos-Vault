@@ -57,6 +57,20 @@ contract ChronosVaultTest {
         _assertEq(rewardDebt, 0, "future staker should not inherit routed rewards");
     }
 
+    function testFundRewardsRevertsWhenTreasuryIsZero() public {
+        (MockERC20 token, ChronosVaultTreasuryHarness vault) = _deployVaultHarness();
+        uint256 rewardAmount = 75 ether;
+
+        vault.setTreasuryForTest(address(0));
+        _assertTrue(token.approve(address(vault), rewardAmount), "approve should succeed");
+
+        (bool ok, bytes memory returndata) =
+            address(vault).call(abi.encodeWithSelector(ChronosVault.fundRewards.selector, rewardAmount));
+
+        _assertTrue(!ok, "fundRewards should revert when treasury is zero");
+        _assertRevertSelector(returndata, ChronosVault.ZeroAddress.selector);
+    }
+
     function testClaimTransfersPendingRewards() public {
         (MockERC20 token, ChronosVault vault) = _deployVault();
         uint256 stakeAmount = 100 ether;
@@ -210,6 +224,11 @@ contract ChronosVaultTest {
         vault = new ChronosVault(address(token), TREASURY);
     }
 
+    function _deployVaultHarness() internal returns (MockERC20 token, ChronosVaultTreasuryHarness vault) {
+        token = new MockERC20("Chronos Mock", "CMOCK", address(this), 1_000 ether);
+        vault = new ChronosVaultTreasuryHarness(address(token), TREASURY);
+    }
+
     function _assertPosition(
         ChronosVault vault,
         uint256 positionId,
@@ -262,5 +281,13 @@ contract ChronosVaultTest {
 contract UnauthorizedClaimer {
     function claim(ChronosVault vault, uint256 positionId) external returns (uint256) {
         return vault.claim(positionId);
+    }
+}
+
+contract ChronosVaultTreasuryHarness is ChronosVault {
+    constructor(address stakingToken_, address treasury_) ChronosVault(stakingToken_, treasury_) {}
+
+    function setTreasuryForTest(address treasury_) external {
+        treasury = treasury_;
     }
 }

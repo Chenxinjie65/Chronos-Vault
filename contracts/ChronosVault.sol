@@ -128,6 +128,9 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         }
 
         if (totalWeightedStaked == 0) {
+            if (treasury == address(0)) {
+                revert ZeroAddress();
+            }
             stakingToken.safeTransferFrom(msg.sender, treasury, amount);
             emit RewardsFunded(msg.sender, amount);
             return;
