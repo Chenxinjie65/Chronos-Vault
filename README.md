@@ -1,188 +1,134 @@
 # Chronos Vault
 
-Chronos Vault is a single-asset staking protocol with fixed lock tiers, early-exit penalties, and penalty redistribution to remaining stakers.
+Chronos Vault is a single-asset staking vault for EVM chains. Users stake one ERC20 token into fixed lock tiers, earn rewards based on weighted stake, and pay a penalty for early exit.
 
-This project is intentionally scoped to be small-to-medium size and self-contained, so an AI coding agent can build it end-to-end without relying on external DeFi protocols.
+The same token is used for both principal and rewards. Admin-funded rewards, early-exit penalties, and forfeited rewards all flow through the same accounting model.
 
-## Goal
+## Status
 
-Build a minimal but production-structured smart contract project that allows:
-
-- users to stake one ERC20 asset
-- users to choose a fixed lock tier when staking
-- users to earn rewards over time from an admin-funded reward pool
-- users who exit before lock expiry to pay a penalty
-- penalties to be redistributed to remaining stakers
-- safe accounting with clear invariants and tests
-
-## Non-goals
-
-This project does NOT include:
-
-- external strategies
-- lending / borrowing
-- AMM logic
-- external oracle integrations
-- upgradeability
-- governance
-- multi-token reward systems
-- multiple stake assets
-- rebasing tokens support
-- fee-on-transfer token support
-
-## Core idea
-
-Users deposit a single staking token into the vault.
-
-Each stake position has:
-- owner
-- amount
-- lock duration
-- unlock timestamp
-- reward debt / accounting fields
-- status
-
-Rewards come from two internal sources:
-1. admin-funded rewards
-2. penalties collected from users who withdraw early
-
-Remaining stakers benefit from those penalties indirectly through the protocol reward accounting.
-
-## Suggested architecture
-
-- `src/ChronosVault.sol`
-  - main staking contract
-  - stake / unstake / claim / accounting
-- `src/interfaces/IChronosVault.sol`
-  - external API and NatSpec reference for integrations
-- `src/MockERC20.sol`
-  - staking token used in tests
-- `src/libraries/`
-  - optional math or position helper libraries
-- `test/`
-  - unit + integration-style tests
-- `script/`
-  - deployment script(s)
-
-## Recommended stack
+This repository is implemented and tested as a Foundry project.
 
 - Solidity `^0.8.24`
-- Foundry
-- OpenZeppelin ERC20 / SafeERC20 / Ownable / Pausable / ReentrancyGuard
+- Foundry + OpenZeppelin
+- single staking token
+- multiple positions per user
+- fixed lock tiers
+- batch claiming
+- pause and emergency mode
+- deployment script and verification guide
 
-## MVP features
+Current test status:
 
-- stake tokens into the vault
-- choose lock tier at stake time
-- claim rewards
-- unstake after lock expiry with no penalty
-- unstake before lock expiry with penalty
-- collected penalty redistributed to remaining stakers
-- admin can fund reward pool
-- pause / unpause
-- emergency withdrawal mode
+- `61 passed, 0 failed`
 
-## Lock tiers
+## Core behavior
 
-Use fixed lock tiers rather than arbitrary user-provided durations.
+### Lock tiers
 
-Suggested tiers:
-- 30 days
-- 90 days
-- 180 days
+The vault ships with three configured tiers:
 
-Suggested reward weights:
-- 1.0x for 30d
-- 1.5x for 90d
-- 2.0x for 180d
+- `0`: 30 days, `1.0x` weight
+- `1`: 90 days, `1.5x` weight
+- `2`: 180 days, `2.0x` weight
 
-These weights are used only for reward distribution, not for principal accounting.
+Rewards are distributed by weighted stake, not raw principal.
 
-## High-level accounting model
+### Reward sources
 
-Use a weighted-share system:
-- principal is the real deposited token amount
-- reward power is based on `amount * weight`
+Rewards can enter the system from:
 
-Rewards are distributed using a standard accumulated reward-per-share model over weighted stake units.
+- owner-funded rewards via `fundRewards`
+- penalties charged on early withdrawals
+- forfeited rewards from `emergencyWithdraw`
 
-Penalty redistribution should increase the reward pool for remaining users.
+If there are no active stakers when value needs to be distributed, that value is routed to `treasury` instead of being stored for future capture.
 
-If rewards, penalties, or forfeited rewards arise while no active weighted stake exists, that value is routed to `treasury` instead of being stored for later user capture.
+### Withdraw paths
 
-## Example user flow
+- Mature `withdraw` returns principal plus pending rewards.
+- Early `withdraw` charges a penalty and redistributes or routes that penalty away from the exiter.
+- `emergencyWithdraw` is only available after emergency mode is enabled and returns principal only.
 
-1. Admin deploys staking token and vault.
-2. Admin funds reward pool with reward tokens.
-3. Alice stakes 100 tokens at 90d lock.
-4. Bob stakes 100 tokens at 30d lock.
-5. Alice and Bob accrue rewards based on weighted stake units.
-6. Bob exits early before 30d expiry and pays a penalty.
-7. That penalty is added into protocol-distributed rewards.
-8. Alice remains staked and benefits from the redistributed penalty.
-9. Alice later claims rewards and/or withdraws after lock expiry.
+### Pause and emergency semantics
 
-## Security expectations
+When paused:
 
-The implementation must pay attention to:
-- reward accounting correctness
-- avoiding double-claim or double-withdraw
-- reentrancy-safe token flow
-- proper use of checks-effects-interactions
-- pause behavior
-- clear emergency mode semantics
-- avoiding silent token loss
-- preventing stale accounting bugs
+- `stake` is disabled
+- `claim` and `claimBatch` are disabled
+- early `withdraw` is disabled
+- mature `withdraw` still works
 
-## Interface and integration notes
+When emergency mode is enabled:
 
-The recommended integration target is `IChronosVault`, not the concrete implementation ABI.
+- it is irreversible for this MVP
+- `claim` and `claimBatch` are disabled
+- normal `withdraw` is disabled
+- users can recover principal with `emergencyWithdraw`
 
-Useful read paths:
-- `getUserPositionIds(user)`
-- `getUserActivePositionIds(user)`
-- `getPosition(positionId)`
-- `getLockTier(tierId)`
-- `getAllLockTierIds()`
-- `pendingRewards(positionId)`
-- `previewWithdraw(positionId)`
+## Contracts
 
-Write paths:
+- [`src/ChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol): main staking contract
+- [`src/interfaces/IChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/interfaces/IChronosVault.sol): external interface and NatSpec reference
+- [`src/MockERC20.sol`](/home/cheng/Portfolio/Chronos-Vault/src/MockERC20.sol): test and local deployment token
+
+For integrations, prefer the interface over the concrete implementation ABI.
+
+Useful read methods:
+
+- `getUserPositionIds`
+- `getUserActivePositionIds`
+- `getPosition`
+- `getLockTier`
+- `getAllLockTierIds`
+- `pendingRewards`
+- `previewWithdraw`
+
+Useful write methods:
+
 - `stake`
 - `claim`
 - `claimBatch`
 - `withdraw`
 - `emergencyWithdraw`
+- `fundRewards`
 
-`previewWithdraw(positionId)` semantics:
-- missing or withdrawn positions return `(0, 0, 0)`
-- normal mode returns the current principal/reward/penalty outcome
-- emergency mode previews the emergency path only: principal only, zero reward, zero penalty
+`previewWithdraw(positionId)` returns:
 
-## Acceptance expectations
+- `(0, 0, 0)` for missing or withdrawn positions
+- principal / reward / penalty for the normal path
+- principal only in emergency mode
 
-A successful implementation should include:
-- clean contract structure
-- clear comments on accounting logic
-- comprehensive tests
-- invariant-minded reasoning
-- minimal and reviewable code
-- no unnecessary abstraction
+## Repository layout
 
-## Local development
+```text
+src/
+  ChronosVault.sol
+  MockERC20.sol
+  interfaces/IChronosVault.sol
+test/
+  ChronosVault.t.sol
+  MockERC20.t.sol
+script/
+  DeployChronosVault.s.sol
+docs/
+  DEPLOYMENT.md
+```
 
-This repository uses the standard Foundry layout with `src/` as the main source directory.
+## Development
 
 ### Prerequisites
 
-- Foundry (`forge`, `cast`, `anvil`)
+- `forge`
+- `cast`
+- `anvil`
 
-### Install dependencies
+### Install
 
 Clone with submodules:
 
 ```bash
 git clone --recurse-submodules <repo-url>
+cd Chronos-Vault
 ```
 
 If already cloned without submodules:
@@ -209,16 +155,20 @@ forge test
 forge fmt
 ```
 
-### Deploy
+## Deployment
 
-Quick start examples:
+The repository includes a Foundry deployment script at [`script/DeployChronosVault.s.sol`](/home/cheng/Portfolio/Chronos-Vault/script/DeployChronosVault.s.sol).
+
+Quick examples:
+
+Deploy a mock token and vault:
 
 ```bash
 TREASURY=0x000000000000000000000000000000000000bEEF \
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
 ```
 
-Deploy a vault using an existing staking token:
+Deploy a vault using an existing token:
 
 ```bash
 TREASURY=0x000000000000000000000000000000000000bEEF \
@@ -226,34 +176,39 @@ EXISTING_TOKEN=0x000000000000000000000000000000000000c0Fe \
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
 ```
 
-For production-style deployment, chain configuration, broadcasting, and block explorer verification, see [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md). A copyable environment template is provided in [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example).
+For environment setup, chain aliases, broadcasting, and block explorer verification:
 
-## Operations notes
+- see [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
+- use [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example) as the local template
+- use [`foundry.toml`](/home/cheng/Portfolio/Chronos-Vault/foundry.toml) for RPC and explorer alias configuration
 
-Pause mode:
-- disables `stake`
-- disables `claim` and `claimBatch`
-- disables early `withdraw`
-- still allows matured `withdraw`
-- only allows `emergencyWithdraw` if emergency mode has already been enabled
+## Test coverage
 
-Emergency mode:
-- is irreversible for this MVP
-- disables `claim` and `claimBatch`
-- normal `withdraw` is not available
-- users can recover principal with `emergencyWithdraw`
-- pending rewards from emergency-withdrawn positions are redistributed to active stakers, or routed to treasury if none remain
+The current test suite covers:
 
-## Current status
+- weighted reward distribution across different tiers
+- reward funding with and without active stakers
+- early withdrawal penalty redistribution
+- emergency withdrawal forfeiture routing
+- pause and emergency mode behavior
+- admin configuration paths and revert cases
+- helper views and preview semantics
+- time and block edge cases
+- multiple users and multiple positions
 
-The repository currently includes:
-- fixed lock tiers: 30d / 90d / 180d
-- multiple positions per user
-- admin-funded same-token rewards
-- early withdraw penalties with redistribution
-- zero-staker treasury routing
-- pause / emergency mode controls
-- view helpers for positions and tiers
-- batch reward claiming
-- Foundry deployment script
-- a passing Foundry test suite covering user flows, admin paths, time edges, and helper views
+## Scope and limitations
+
+This MVP intentionally does not include:
+
+- upgradeability
+- governance
+- external yield strategies
+- ERC4626 wrappers
+- NFT positions
+- partial withdrawals
+- fee-on-transfer token support
+- rebasing token support
+
+## License
+
+MIT
