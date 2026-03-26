@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ChronosVault} from "../contracts/ChronosVault.sol";
 import {MockERC20} from "../contracts/MockERC20.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface Vm {
     function warp(uint256 newTimestamp) external;
@@ -136,6 +137,75 @@ contract ChronosVaultTest {
 
         _assertTrue(!ok, "claim should revert for unauthorized caller");
         _assertRevertSelector(returndata, ChronosVault.NotPositionOwner.selector);
+    }
+
+    function testPausedStakeReverts() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 amount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), amount), "approve should succeed");
+        vault.pause();
+
+        (bool ok, bytes memory returndata) =
+            address(vault).call(abi.encodeCall(ChronosVault.stake, (amount, vault.TIER_30_DAYS())));
+
+        _assertTrue(!ok, "stake should revert while paused");
+        _assertRevertSelector(returndata, Pausable.EnforcedPause.selector);
+    }
+
+    function testPausedClaimReverts() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+        vault.pause();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.claim, (positionId)));
+
+        _assertTrue(!ok, "claim should revert while paused");
+        _assertRevertSelector(returndata, Pausable.EnforcedPause.selector);
+    }
+
+    function testPausedEarlyWithdrawReverts() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.pause();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.withdraw, (positionId)));
+
+        _assertTrue(!ok, "early withdraw should revert while paused");
+        _assertRevertSelector(returndata, Pausable.EnforcedPause.selector);
+    }
+
+    function testPausedMaturedWithdrawStillWorks() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+        vault.pause();
+        vm.warp(block.timestamp + 30 days);
+
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.withdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+
+        _assertEq(
+            balanceAfterWithdraw - balanceBeforeWithdraw, stakeAmount + rewardAmount, "matured withdraw should work"
+        );
+        _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
     }
 
     function testWithdrawAfterUnlockReturnsPrincipalAndRewards() public {
@@ -282,6 +352,85 @@ contract ChronosVaultTest {
         _assertTrue(token.approve(address(vault), 10 ether), "approve should succeed");
         uint256 newPositionId = vault.stake(10 ether, vault.TIER_30_DAYS());
         _assertEq(vault.pendingRewards(newPositionId), 0, "future staker should not capture routed penalty");
+    }
+
+    function testEmergencyWithdrawReturnsPrincipalOnly() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+        vault.enableEmergencyMode();
+
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.emergencyWithdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+
+        _assertEq(
+            balanceAfterWithdraw - balanceBeforeWithdraw, stakeAmount, "emergency withdraw should return principal"
+        );
+        _assertEq(vault.pendingRewards(positionId), 0, "withdrawn position should have no pending rewards");
+        _assertEq(token.balanceOf(TREASURY), rewardAmount, "forfeited rewards should route to treasury for last staker");
+    }
+
+    function testEmergencyWithdrawRedistributesForfeitedRewards() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        VaultUser exiter = new VaultUser();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        token.mint(address(exiter), stakeAmount);
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+        exiter.approveToken(token, address(vault), stakeAmount);
+
+        uint256 remainingPositionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        uint256 exitingPositionId = exiter.stake(vault, stakeAmount, vault.TIER_30_DAYS());
+
+        vault.fundRewards(rewardAmount);
+        vault.enableEmergencyMode();
+        exiter.emergencyWithdraw(vault, exitingPositionId);
+
+        _assertEq(token.balanceOf(address(exiter)), stakeAmount, "emergency withdraw should not pay rewards");
+        _assertEq(vault.pendingRewards(remainingPositionId), rewardAmount, "remaining staker should receive forfeited");
+        _assertEq(token.balanceOf(TREASURY), 0, "treasury should not receive redistributed forfeited rewards");
+    }
+
+    function testEmergencyWithdrawIgnoresLock() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_180_DAYS());
+        vault.enableEmergencyMode();
+
+        uint256 balanceBeforeWithdraw = token.balanceOf(address(this));
+        vault.emergencyWithdraw(positionId);
+        uint256 balanceAfterWithdraw = token.balanceOf(address(this));
+
+        _assertEq(balanceAfterWithdraw - balanceBeforeWithdraw, stakeAmount, "emergency withdraw should bypass lock");
+        _assertEq(vault.totalPrincipalStaked(), 0, "principal total should be cleared");
+        _assertEq(vault.totalWeightedStaked(), 0, "weighted total should be cleared");
+    }
+
+    function testClaimRevertsDuringEmergencyMode() public {
+        (MockERC20 token, ChronosVault vault) = _deployVault();
+        uint256 stakeAmount = 100 ether;
+        uint256 rewardAmount = 20 ether;
+
+        _assertTrue(token.approve(address(vault), stakeAmount + rewardAmount), "approve should succeed");
+
+        uint256 positionId = vault.stake(stakeAmount, vault.TIER_30_DAYS());
+        vault.fundRewards(rewardAmount);
+        vault.enableEmergencyMode();
+
+        (bool ok, bytes memory returndata) = address(vault).call(abi.encodeCall(ChronosVault.claim, (positionId)));
+
+        _assertTrue(!ok, "claim should revert during emergency mode");
+        _assertRevertSelector(returndata, ChronosVault.EmergencyModeActive.selector);
     }
 
     function testStakeCreatesPositionWithExpectedAccounting() public {
@@ -446,6 +595,10 @@ contract VaultUser {
 
     function withdraw(ChronosVault vault, uint256 positionId) external {
         vault.withdraw(positionId);
+    }
+
+    function emergencyWithdraw(ChronosVault vault, uint256 positionId) external {
+        vault.emergencyWithdraw(positionId);
     }
 }
 

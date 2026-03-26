@@ -4,9 +4,10 @@ pragma solidity ^0.8.24;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract ChronosVault is Ownable, ReentrancyGuard {
+contract ChronosVault is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant ACC_PRECISION = 1e24;
@@ -26,6 +27,9 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     error NotPositionOwner();
     error PositionWithdrawn();
     error PositionNotMatured();
+    error EmergencyModeNotEnabled();
+    error EmergencyModeAlreadyEnabled();
+    error EmergencyModeActive();
 
     struct Position {
         address owner;
@@ -52,6 +56,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     uint256 public totalWeightedStaked;
     uint256 public accRewardPerWeightedShare;
     uint256 public earlyExitPenaltyBps = DEFAULT_EARLY_EXIT_PENALTY_BPS;
+    bool public emergencyMode;
 
     mapping(uint256 => Position) public positions;
     mapping(address => uint256[]) public userPositionIds;
@@ -68,6 +73,10 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     );
     event RewardsFunded(address indexed funder, uint256 amount);
     event Claimed(address indexed user, uint256 indexed positionId, uint256 reward);
+    event EmergencyModeEnabled(address indexed account);
+    event EmergencyWithdrawn(
+        address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 forfeitedReward
+    );
     event Withdrawn(
         address indexed user, uint256 indexed positionId, uint256 principalOut, uint256 rewardOut, uint256 penalty
     );
@@ -89,7 +98,25 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         _setLockTier(tierId, duration, weight, enabled);
     }
 
-    function stake(uint256 amount, uint256 tierId) external nonReentrant returns (uint256 positionId) {
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function enableEmergencyMode() external onlyOwner {
+        if (emergencyMode) {
+            revert EmergencyModeAlreadyEnabled();
+        }
+
+        emergencyMode = true;
+
+        emit EmergencyModeEnabled(msg.sender);
+    }
+
+    function stake(uint256 amount, uint256 tierId) external whenNotPaused nonReentrant returns (uint256 positionId) {
         if (amount == 0) {
             revert InvalidAmount();
         }
@@ -159,6 +186,8 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     }
 
     function claim(uint256 positionId) external nonReentrant returns (uint256 reward) {
+        _requireClaimAllowed();
+
         Position storage position = positions[positionId];
         if (position.owner != msg.sender) {
             revert NotPositionOwner();
@@ -185,6 +214,14 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         if (position.withdrawn) {
             revert PositionWithdrawn();
         }
+        if (emergencyMode) {
+            revert EmergencyModeActive();
+        }
+
+        bool isMatured = block.timestamp >= position.unlockTime;
+        if (!isMatured) {
+            _requireNotPaused();
+        }
 
         uint256 principalOut = position.principal;
         uint256 rewardOut = _pendingRewards(position);
@@ -194,7 +231,7 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         totalPrincipalStaked -= principalOut;
         totalWeightedStaked -= position.weightedAmount;
 
-        if (block.timestamp < position.unlockTime) {
+        if (!isMatured) {
             penalty = principalOut * earlyExitPenaltyBps / BPS_DENOMINATOR;
             principalOut -= penalty;
 
@@ -220,6 +257,46 @@ contract ChronosVault is Ownable, ReentrancyGuard {
         emit Withdrawn(msg.sender, positionId, principalOut, rewardOut, penalty);
     }
 
+    function emergencyWithdraw(uint256 positionId) external nonReentrant {
+        if (!emergencyMode) {
+            revert EmergencyModeNotEnabled();
+        }
+
+        Position storage position = positions[positionId];
+        if (position.owner != msg.sender) {
+            revert NotPositionOwner();
+        }
+        if (position.withdrawn) {
+            revert PositionWithdrawn();
+        }
+
+        uint256 principalOut = position.principal;
+        uint256 forfeitedReward = _pendingRewards(position);
+
+        totalPrincipalStaked -= principalOut;
+        totalWeightedStaked -= position.weightedAmount;
+
+        // Emergency exits return principal only. Any accrued reward must be
+        // explicitly redistributed to active stakers or routed to treasury so no dust is stranded.
+        if (forfeitedReward > 0) {
+            if (totalWeightedStaked == 0) {
+                if (treasury == address(0)) {
+                    revert ZeroAddress();
+                }
+                stakingToken.safeTransfer(treasury, forfeitedReward);
+            } else {
+                _distributeRewards(forfeitedReward);
+            }
+        }
+
+        position.rewardDebt += forfeitedReward;
+        position.withdrawn = true;
+
+        stakingToken.safeTransfer(msg.sender, principalOut);
+
+        emit EmergencyWithdrawn(msg.sender, positionId, principalOut, forfeitedReward);
+    }
+
     function _setLockTier(uint256 tierId, uint64 duration, uint256 weight, bool enabled) internal {
         if (duration == 0 || weight == 0) {
             revert InvalidLockTierConfig();
@@ -237,6 +314,13 @@ contract ChronosVault is Ownable, ReentrancyGuard {
     function _calculateRewardDebt(uint256 weightedAmount) internal view returns (uint256) {
         // Snapshot the current accumulator so later rewards only include value added after staking.
         return weightedAmount * accRewardPerWeightedShare / ACC_PRECISION;
+    }
+
+    function _requireClaimAllowed() internal view {
+        _requireNotPaused();
+        if (emergencyMode) {
+            revert EmergencyModeActive();
+        }
     }
 
     function _distributeRewards(uint256 amount) internal {
