@@ -211,7 +211,7 @@ forge fmt
 
 ### Deploy
 
-Deploy a mock token and vault:
+Quick start examples:
 
 ```bash
 TREASURY=0x000000000000000000000000000000000000bEEF \
@@ -225,6 +225,8 @@ TREASURY=0x000000000000000000000000000000000000bEEF \
 EXISTING_TOKEN=0x000000000000000000000000000000000000c0Fe \
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run()"
 ```
+
+For production-style deployment, chain configuration, broadcasting, and block explorer verification, see [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md). A copyable environment template is provided in [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example).
 
 ## Operations notes
 

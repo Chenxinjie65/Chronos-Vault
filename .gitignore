@@ -3,3 +3,4 @@
 /broadcast/
 /.env
 /.env.*
+!/.env.example
