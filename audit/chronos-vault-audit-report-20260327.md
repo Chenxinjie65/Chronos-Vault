@@ -121,27 +121,3 @@ This was treated as a UX/state-model concern rather than a confirmed loss-of-fun
 ### 3. Reward distribution remainder dust
 
 `_distributeRewards()` uses integer division when updating the accumulator, so repeated small reward additions can leave undistributed dust in the contract. The repository already describes this as a known design limitation, and no concrete profitable exploit path was established.
-
-## Validation
-
-The following commands were run locally before finalizing this report:
-
-- `forge fmt --check`
-- `forge build`
-- `forge test`
-
-Results:
-
-- `forge fmt --check`: passed
-- `forge build`: passed
-- `forge test`: passed, 69/69 tests passed
-
-## Conclusion
-
-Chronos Vault's core reward accumulator, zero-staker routing, and pause/emergency primitives are generally straightforward and reasonably well covered by tests. However, the early-withdraw penalty logic contains a clear high-severity flaw: in a multi-position setup, the exiting user can reclaim its own penalty through another active position.
-
-That issue should be fixed before relying on the penalty system as an economic control. After remediation, the test suite should be extended to cover:
-
-- sibling-position penalty isolation for the same user
-- low-decimal penalty rounding behavior
-- non-standard ERC20 defenses if token compatibility is expanded beyond the current documented assumptions
