@@ -8,6 +8,7 @@ Supporting docs:
 
 - deployment and verification: [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
 - audit assumptions and owner powers: [`docs/AUDIT_PREP.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT_PREP.md)
+- known issues and design limitations: [`docs/KNOWN_ISSUES.md`](/home/cheng/Portfolio/Chronos-Vault/docs/KNOWN_ISSUES.md)
 
 ## Core behavior
 
