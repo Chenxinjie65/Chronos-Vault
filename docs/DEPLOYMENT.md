@@ -4,11 +4,11 @@ This repository is designed to deploy cleanly to standard EVM chains with Foundr
 
 The project already includes a deployment script:
 
-- [`script/DeployChronosVault.s.sol`](/home/cheng/Portfolio/Chronos-Vault/script/DeployChronosVault.s.sol)
+- [`script/DeployChronosVault.s.sol`](../script/DeployChronosVault.s.sol)
 
 That script supports two modes:
 
-- deploy a new [`MockERC20`](/home/cheng/Portfolio/Chronos-Vault/src/MockERC20.sol) and then deploy [`ChronosVault`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol)
+- deploy a new [`MockERC20`](../src/MockERC20.sol) and then deploy [`ChronosVault`](../src/ChronosVault.sol)
 - reuse an existing ERC20 token and deploy only the vault
 
 ## 1. What the script expects
@@ -28,7 +28,7 @@ Foundry CLI variables:
 - `..._RPC_URL`: RPC endpoint for the chain you want to deploy to
 - explorer API key variables such as `ETHERSCAN_API_KEY`, `BASESCAN_API_KEY`, or `ARBISCAN_API_KEY`
 
-The repository includes a copyable template at [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example).
+The repository includes a copyable template at [`.env.example`](../.env.example).
 
 ## 2. Create your local config
 

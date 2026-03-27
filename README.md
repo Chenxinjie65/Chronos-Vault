@@ -6,9 +6,9 @@ The same token is used for both principal and rewards. Admin-funded rewards, ear
 
 Supporting docs:
 
-- deployment and verification: [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
-- audit assumptions and owner powers: [`docs/AUDIT_PREP.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT_PREP.md)
-- known issues and design limitations: [`docs/KNOWN_ISSUES.md`](/home/cheng/Portfolio/Chronos-Vault/docs/KNOWN_ISSUES.md)
+- deployment and verification: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- audit assumptions and owner powers: [`docs/AUDIT_PREP.md`](docs/AUDIT_PREP.md)
+- known issues and design limitations: [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
 
 ## Core behavior
 
@@ -56,9 +56,9 @@ When emergency mode is enabled:
 
 ## Contracts
 
-- [`src/ChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol): main staking contract
-- [`src/interfaces/IChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/interfaces/IChronosVault.sol): external interface and NatSpec reference
-- [`src/MockERC20.sol`](/home/cheng/Portfolio/Chronos-Vault/src/MockERC20.sol): test and local deployment token
+- [`src/ChronosVault.sol`](src/ChronosVault.sol): main staking contract
+- [`src/interfaces/IChronosVault.sol`](src/interfaces/IChronosVault.sol): external interface and NatSpec reference
+- [`src/MockERC20.sol`](src/MockERC20.sol): test and local deployment token
 
 For integrations, prefer the interface over the concrete implementation ABI.
 
@@ -130,7 +130,7 @@ forge fmt
 
 ## Deployment
 
-The repository includes a Foundry deployment script at [`script/DeployChronosVault.s.sol`](/home/cheng/Portfolio/Chronos-Vault/script/DeployChronosVault.s.sol).
+The repository includes a Foundry deployment script at [`script/DeployChronosVault.s.sol`](script/DeployChronosVault.s.sol).
 
 Quick examples:
 
@@ -151,9 +151,9 @@ forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript --sig "run
 
 For environment setup, chain aliases, broadcasting, and block explorer verification:
 
-- see [`docs/DEPLOYMENT.md`](/home/cheng/Portfolio/Chronos-Vault/docs/DEPLOYMENT.md)
-- use [`.env.example`](/home/cheng/Portfolio/Chronos-Vault/.env.example) as the local template
-- use [`foundry.toml`](/home/cheng/Portfolio/Chronos-Vault/foundry.toml) for RPC and explorer alias configuration
+- see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- use [`.env.example`](.env.example) as the local template
+- use [`foundry.toml`](foundry.toml) for RPC and explorer alias configuration
 
 ## License
 

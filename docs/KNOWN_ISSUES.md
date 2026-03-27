@@ -8,7 +8,7 @@ These items are not all "bugs" in the strict sense. They are grouped as:
 - operator trust assumptions
 - compatibility and integration limitations
 
-The list is based on the current implementation in [`src/ChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol) and the current project specification in [`SPEC.md`](/home/cheng/Portfolio/Chronos-Vault/SPEC.md).
+The list is based on the current implementation in [`src/ChronosVault.sol`](../src/ChronosVault.sol) and the current project specification in [`SPEC.md`](../SPEC.md).
 
 ## Summary Of The Three User-Raised Items
 
@@ -26,9 +26,9 @@ Status: accepted design limitation
 
 Relevant code:
 
-- [`src/ChronosVault.sol:86`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L86)
-- [`src/ChronosVault.sol:132`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L132)
-- [`src/ChronosVault.sol:431`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L431)
+- [`src/ChronosVault.sol:86`](../src/ChronosVault.sol#L86)
+- [`src/ChronosVault.sol:132`](../src/ChronosVault.sol#L132)
+- [`src/ChronosVault.sol:431`](../src/ChronosVault.sol#L431)
 
 Why it exists:
 
@@ -60,9 +60,9 @@ Status: accepted design limitation
 
 Relevant code:
 
-- [`src/ChronosVault.sol:132`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L132)
-- [`src/ChronosVault.sol:400`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L400)
-- [`src/ChronosVault.sol:431`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L431)
+- [`src/ChronosVault.sol:132`](../src/ChronosVault.sol#L132)
+- [`src/ChronosVault.sol:400`](../src/ChronosVault.sol#L400)
+- [`src/ChronosVault.sol:431`](../src/ChronosVault.sol#L431)
 
 Why it exists:
 
@@ -94,10 +94,10 @@ Status: accepted design limitation
 
 Relevant code:
 
-- [`src/ChronosVault.sol:400`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L400)
-- [`src/ChronosVault.sol:405`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L405)
-- [`src/ChronosVault.sol:431`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L431)
-- [`SPEC.md:447`](/home/cheng/Portfolio/Chronos-Vault/SPEC.md#L447)
+- [`src/ChronosVault.sol:400`](../src/ChronosVault.sol#L400)
+- [`src/ChronosVault.sol:405`](../src/ChronosVault.sol#L405)
+- [`src/ChronosVault.sol:431`](../src/ChronosVault.sol#L431)
+- [`SPEC.md:447`](../SPEC.md#L447)
 
 Why it exists:
 
@@ -126,9 +126,9 @@ Status: accepted limitation, should be disclosed
 
 Relevant code:
 
-- [`src/ChronosVault.sol:86`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L86)
-- [`src/ChronosVault.sol:132`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L132)
-- [`src/ChronosVault.sol`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol)
+- [`src/ChronosVault.sol:86`](../src/ChronosVault.sol#L86)
+- [`src/ChronosVault.sol:132`](../src/ChronosVault.sol#L132)
+- [`src/ChronosVault.sol`](../src/ChronosVault.sol)
 
 Why it exists:
 
@@ -155,7 +155,7 @@ Status: trust assumption, not a code bug
 
 Relevant code:
 
-- [`src/ChronosVault.sol:335`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L335)
+- [`src/ChronosVault.sol:335`](../src/ChronosVault.sol#L335)
 
 Impact:
 
@@ -178,9 +178,9 @@ Status: trust assumption, not a code bug
 
 Relevant code:
 
-- [`src/ChronosVault.sol:76`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L76)
-- [`src/ChronosVault.sol:255`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L255)
-- [`src/ChronosVault.sol:302`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L302)
+- [`src/ChronosVault.sol:76`](../src/ChronosVault.sol#L76)
+- [`src/ChronosVault.sol:255`](../src/ChronosVault.sol#L255)
+- [`src/ChronosVault.sol:302`](../src/ChronosVault.sol#L302)
 
 Impact:
 
@@ -203,9 +203,9 @@ Status: trust assumption, not a code bug
 
 Relevant code:
 
-- [`src/ChronosVault.sol:137`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L137)
-- [`src/ChronosVault.sol:346`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L346)
-- [`src/ChronosVault.sol:415`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L415)
+- [`src/ChronosVault.sol:137`](../src/ChronosVault.sol#L137)
+- [`src/ChronosVault.sol:346`](../src/ChronosVault.sol#L346)
+- [`src/ChronosVault.sol:415`](../src/ChronosVault.sol#L415)
 
 Impact:
 
@@ -226,9 +226,9 @@ Status: compatibility limitation
 
 Relevant code:
 
-- [`src/ChronosVault.sol:127`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L127)
-- [`src/ChronosVault.sol:146`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L146)
-- [`docs/AUDIT_PREP.md`](/home/cheng/Portfolio/Chronos-Vault/docs/AUDIT_PREP.md)
+- [`src/ChronosVault.sol:127`](../src/ChronosVault.sol#L127)
+- [`src/ChronosVault.sol:146`](../src/ChronosVault.sol#L146)
+- [`docs/AUDIT_PREP.md`](./AUDIT_PREP.md)
 
 Impact:
 
@@ -247,8 +247,8 @@ Status: gas and UX limitation
 
 Relevant code:
 
-- [`src/ChronosVault.sol:176`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L176)
-- [`src/ChronosVault.sol:242`](/home/cheng/Portfolio/Chronos-Vault/src/ChronosVault.sol#L242)
+- [`src/ChronosVault.sol:176`](../src/ChronosVault.sol#L176)
+- [`src/ChronosVault.sol:242`](../src/ChronosVault.sol#L242)
 
 Impact:
 
