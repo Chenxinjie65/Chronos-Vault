@@ -4,6 +4,15 @@ Chronos Vault is a single-asset staking vault for EVM chains. Users stake one ER
 
 The same token is used for both principal and rewards. Admin-funded rewards, early-exit penalties, and forfeited rewards all flow through the same accounting model.
 
+This repository is built as a compact staking-protocol MVP and a reviewable engineering sample. The implementation emphasizes conservative accounting, clear failure modes, and testable reward logic instead of protocol sprawl.
+
+## Portfolio Highlights
+
+- principal accounting is kept separate from weighted reward accounting
+- zero-staker rewards, penalties, and forfeited rewards are routed away from future-capture edge cases
+- users can hold multiple concurrent positions with independent lock tiers
+- the project includes unit, fuzz, and invariant tests plus a verified Sepolia deployment and live smoke test
+
 Supporting docs:
 
 - deployment and verification: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
