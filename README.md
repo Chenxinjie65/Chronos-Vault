@@ -158,14 +158,18 @@ For environment setup, chain aliases, broadcasting, and block explorer verificat
 
 ## Sepolia Deployment
 
-This section is updated after live broadcast and verification.
+Deployed on `2026-04-02` to Sepolia (`chainId 11155111`).
 
-- MockERC20: `TBD`
-- ChronosVault: `TBD`
-- Treasury: `TBD`
-- Verification:
-  - MockERC20: `TBD`
-  - ChronosVault: `TBD`
+- MockERC20: [`0x78e95ee9d64a480Fdf4F7B0766212B36a2d83388`](https://sepolia.etherscan.io/address/0x78e95ee9d64a480fdf4f7b0766212b36a2d83388)
+- ChronosVault: [`0xb18A48A6211697e01a5738e9bD64aC875532FC9e`](https://sepolia.etherscan.io/address/0xb18a48a6211697e01a5738e9bd64ac875532fc9e)
+- Treasury: `0xeefbF82D8f5e9149036A9136876EfeE72a3b65AE`
+- Verification status: both contracts verified on Etherscan
+- MockERC20 deploy tx: [`0xb27a4d1ce84eeb67e29a1c4170a4a1ee487b82083290dd646afbeec21cdf534b`](https://sepolia.etherscan.io/tx/0xb27a4d1ce84eeb67e29a1c4170a4a1ee487b82083290dd646afbeec21cdf534b)
+- ChronosVault deploy tx: [`0xfd39d51aaead8a5752c221accc52323138ec7c0eed0b45036d3ab7be9c8d46bf`](https://sepolia.etherscan.io/tx/0xfd39d51aaead8a5752c221accc52323138ec7c0eed0b45036d3ab7be9c8d46bf)
+- Smoke test `approve` tx: [`0x544dbd0514a8e5002a99b1e3638c9032cbfcddc1a3451a71104672b6d6d8f07b`](https://sepolia.etherscan.io/tx/0x544dbd0514a8e5002a99b1e3638c9032cbfcddc1a3451a71104672b6d6d8f07b)
+- Smoke test `stake` tx: [`0x98587760d6eeeb0367640a5094a534aeadc7794bc362f9d2f899b6f85fb1209b`](https://sepolia.etherscan.io/tx/0x98587760d6eeeb0367640a5094a534aeadc7794bc362f9d2f899b6f85fb1209b)
+- Smoke test `fundRewards` tx: [`0x040cbecf93fadfc859ffac29b61780e2b2cdae74d208e25cf465fb509f2df854`](https://sepolia.etherscan.io/tx/0x040cbecf93fadfc859ffac29b61780e2b2cdae74d208e25cf465fb509f2df854)
+- Smoke test `claim` tx: [`0xc4b4de9a582503c2c8297816ca45d1dff17bed57727802a6bf467319cdd0d169`](https://sepolia.etherscan.io/tx/0xc4b4de9a582503c2c8297816ca45d1dff17bed57727802a6bf467319cdd0d169)
 
 ## License
 
