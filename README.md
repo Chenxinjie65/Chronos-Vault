@@ -131,6 +131,7 @@ forge fmt
 ## Deployment
 
 The repository includes a Foundry deployment script at [`script/DeployChronosVault.s.sol`](script/DeployChronosVault.s.sol).
+It also includes an on-chain smoke test script at [`script/SmokeTestChronosVault.s.sol`](script/SmokeTestChronosVault.s.sol).
 
 Quick examples:
 
@@ -154,6 +155,17 @@ For environment setup, chain aliases, broadcasting, and block explorer verificat
 - see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - use [`.env.example`](.env.example) as the local template
 - use [`foundry.toml`](foundry.toml) for RPC and explorer alias configuration
+
+## Sepolia Deployment
+
+This section is updated after live broadcast and verification.
+
+- MockERC20: `TBD`
+- ChronosVault: `TBD`
+- Treasury: `TBD`
+- Verification:
+  - MockERC20: `TBD`
+  - ChronosVault: `TBD`
 
 ## License
 

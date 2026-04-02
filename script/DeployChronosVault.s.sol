@@ -11,6 +11,8 @@ contract DeployChronosVaultScript is Script {
     error MissingTokenConfig();
 
     function run() external returns (ChronosVault vault, address stakingToken) {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(privateKey);
         address treasury = vm.envAddress("TREASURY");
         address existingToken = vm.envOr("EXISTING_TOKEN", address(0));
         bool deployMock = vm.envOr("DEPLOY_MOCK", existingToken == address(0));
@@ -26,12 +28,13 @@ contract DeployChronosVaultScript is Script {
             revert MissingTokenConfig();
         }
 
-        vm.startBroadcast();
+        vm.startBroadcast(privateKey);
 
         if (deployMock) {
-            MockERC20 mockToken = new MockERC20(mockName, mockSymbol, msg.sender, mockInitialSupply);
+            MockERC20 mockToken = new MockERC20(mockName, mockSymbol, deployer, mockInitialSupply);
             stakingToken = address(mockToken);
             console2.log("Mock token deployed:", stakingToken);
+            console2.log("Mock token initial holder:", deployer);
         } else {
             stakingToken = existingToken;
             console2.log("Using existing token:", stakingToken);
@@ -41,6 +44,8 @@ contract DeployChronosVaultScript is Script {
 
         vm.stopBroadcast();
 
+        console2.log("Chain ID:", block.chainid);
+        console2.log("Broadcaster:", deployer);
         console2.log("ChronosVault deployed:", address(vault));
         console2.log("Treasury:", treasury);
     }

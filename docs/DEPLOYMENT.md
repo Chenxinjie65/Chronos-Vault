@@ -24,7 +24,7 @@ Script-controlled variables:
 
 Foundry CLI variables:
 
-- `PRIVATE_KEY`: used by `forge script --broadcast --private-key ...`
+- `PRIVATE_KEY`: used by the deployment and smoke test scripts via `vm.envUint("PRIVATE_KEY")`
 - `..._RPC_URL`: RPC endpoint for the chain you want to deploy to
 - explorer API key variables such as `ETHERSCAN_API_KEY`, `BASESCAN_API_KEY`, or `ARBISCAN_API_KEY`
 
@@ -88,7 +88,6 @@ source .env
 
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --sig "run()"
 ```
 
@@ -99,7 +98,6 @@ source .env
 
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --sig "run()"
 ```
 
@@ -116,7 +114,6 @@ source .env
 
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --broadcast \
   --sig "run()" \
   -vvvv
@@ -129,7 +126,6 @@ source .env
 
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url sepolia \
-  --private-key "$PRIVATE_KEY" \
   --broadcast \
   --sig "run()" \
   -vvvv
@@ -157,7 +153,6 @@ source .env
 
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url sepolia \
-  --private-key "$PRIVATE_KEY" \
   --broadcast \
   --verify \
   --sig "run()" \
@@ -253,7 +248,39 @@ forge verify-contract \
   src/MockERC20.sol:MockERC20
 ```
 
-## 8. Recommended post-deploy checklist
+## 8. Post-deploy Sepolia smoke test
+
+After deployment, write the deployed addresses back into your local `.env`:
+
+```bash
+SEPOLIA_VAULT_ADDRESS=0x...
+SEPOLIA_STAKING_TOKEN_ADDRESS=0x...
+```
+
+Then run the on-chain smoke test script:
+
+```bash
+source .env
+
+forge script script/SmokeTestChronosVault.s.sol:SmokeTestChronosVaultScript \
+  --rpc-url sepolia \
+  --broadcast \
+  --sig "run()" \
+  -vvvv
+```
+
+What this smoke test does:
+
+- checks the chain id, owner, staking token, and treasury wiring
+- approves the vault for `SMOKE_STAKE_AMOUNT + SMOKE_REWARD_AMOUNT`
+- creates one stake at `SMOKE_TIER_ID`
+- funds rewards with `SMOKE_REWARD_AMOUNT`
+- claims the funded rewards
+- verifies the claimed reward amount and logs a live `previewWithdraw`
+
+For the default values in [`.env.example`](../.env.example), the deployer needs at least `110 ether` worth of the staking token.
+
+## 9. Recommended post-deploy checklist
 
 After deployment and verification:
 
@@ -264,7 +291,7 @@ After deployment and verification:
 5. fund rewards with a small test amount before any public use
 6. make a small stake and claim on the target chain before wider rollout
 
-## 9. Common mistakes
+## 10. Common mistakes
 
 - forgetting to `source .env`, which leaves `TREASURY` or `PRIVATE_KEY` unset
 - setting both `EXISTING_TOKEN` and `DEPLOY_MOCK=true` and expecting the mock path to win; the script intentionally prefers `EXISTING_TOKEN`
@@ -272,15 +299,15 @@ After deployment and verification:
 - verifying with the wrong constructor arguments
 - verifying the mock token with the wrong `initialHolder_`; it is the broadcaster, not the treasury
 - deploying to an explorer network that has a different chain alias name than your local `foundry.toml`
+- forgetting to write `SEPOLIA_VAULT_ADDRESS` and `SEPOLIA_STAKING_TOKEN_ADDRESS` into `.env` before running the smoke test
 
-## 10. Minimal command reference
+## 11. Minimal command reference
 
 Dry-run:
 
 ```bash
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --sig "run()"
 ```
 
@@ -289,7 +316,6 @@ Broadcast:
 ```bash
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --broadcast \
   --sig "run()"
 ```
@@ -299,8 +325,16 @@ Broadcast and verify:
 ```bash
 forge script script/DeployChronosVault.s.sol:DeployChronosVaultScript \
   --rpc-url sepolia \
-  --private-key "$PRIVATE_KEY" \
   --broadcast \
   --verify \
+  --sig "run()"
+```
+
+Sepolia smoke test:
+
+```bash
+forge script script/SmokeTestChronosVault.s.sol:SmokeTestChronosVaultScript \
+  --rpc-url sepolia \
+  --broadcast \
   --sig "run()"
 ```
